@@ -12,7 +12,7 @@
 
 ## 下载体验
 
-前往 [GitHub Releases](https://github.com/jiahe140325-design/sleep-saver-android/releases/latest) 下载最新版 APK。
+前往 [拯救睡眠 1.2.2-dev 发布页](https://github.com/jiahe140325-design/sleep-saver-android/releases/tag/v1.2.2-dev) 下载当前 APK。
 
 小米 / HyperOS 安装提示：
 
