@@ -1,0 +1,15 @@
+<svg width="192" height="192" viewBox="0 0 192 192" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 统一奶油色背景；42.24 = 192 × 22% -->
+  <rect width="192" height="192" rx="42.24" fill="#FFF4D6"/>
+  <circle cx="96" cy="100" r="52" fill="#3D3654"/>
+  <circle cx="114" cy="92" r="44" fill="#FFF4D6"/>
+  <!-- 闭眼 -->
+  <path d="M54 104 Q68 112 82 104" stroke="#FFF4D6" stroke-width="4" stroke-linecap="round"/>
+  <line x1="58" y1="106" x2="54" y2="112" stroke="#FFF4D6" stroke-width="3" stroke-linecap="round"/>
+  <line x1="64" y1="107" x2="62" y2="116" stroke="#FFF4D6" stroke-width="3" stroke-linecap="round"/>
+  <line x1="70" y1="107" x2="72" y2="116" stroke="#FFF4D6" stroke-width="3" stroke-linecap="round"/>
+  <line x1="76" y1="106" x2="80" y2="112" stroke="#FFF4D6" stroke-width="3" stroke-linecap="round"/>
+  <!-- 星星 -->
+  <path d="M130 46 L132 52 L138 52 L133 56 L135 62 L130 58 L125 62 L127 56 L122 52 L128 52 Z" fill="#7FA99B"/>
+</svg>
+

@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">拯救睡眠</string>
+    <string name="reminder_channel_name">睡眠提醒</string>
+    <string name="reminder_title">该准备睡觉啦</string>
+    <string name="reminder_body">放下手机，给明天的自己充充电。</string>
+</resources>
+
