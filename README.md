@@ -37,14 +37,32 @@
 - 不申请定位、联系人、短信、电话、麦克风、相机或相册权限。
 - 禁止 destructive migration，关闭 Android Auto Backup。
 
-## 界面预览
+## 当前实机截图
+
+以下截图来自 `1.2.2-dev` 在小米 14 Pro 上的实际安装效果，不是设计效果图。
 
 <p>
-  <img src="01-今日.png" width="190" alt="今日页">
-  <img src="02-打卡睡前.png" width="190" alt="睡前打卡页">
-  <img src="03-打卡早起.png" width="190" alt="早起打卡页">
-  <img src="04-手帐.png" width="190" alt="手帐页">
+  <img src="docs/screenshots/actual/01-today-xiaomi14pro.jpg" width="190" alt="小米 14 Pro 实机今日页">
+  <img src="docs/screenshots/actual/02-checkin-bedtime-xiaomi14pro.jpg" width="190" alt="小米 14 Pro 实机睡前打卡页">
+  <img src="docs/screenshots/actual/03-journal-xiaomi14pro.jpg" width="190" alt="小米 14 Pro 实机睡眠手帐页">
+  <img src="docs/screenshots/actual/04-friends-xiaomi14pro.jpg" width="190" alt="小米 14 Pro 实机好友暂未开放页">
 </p>
+
+## 原始设计参考
+
+<details>
+  <summary>展开查看早期设计稿</summary>
+
+这些图片用于表达最初的信息架构和视觉方向，不是当前版本的安装截图，也不代表已经按像素级还原。
+
+<p>
+  <img src="01-今日.png" width="150" alt="早期今日页设计参考">
+  <img src="02-打卡睡前.png" width="150" alt="早期睡前打卡页设计参考">
+  <img src="03-打卡早起.png" width="150" alt="早期早起打卡页设计参考">
+  <img src="04-手帐.png" width="150" alt="早期手帐页设计参考">
+  <img src="05-好友.png" width="150" alt="早期好友页设计参考">
+</p>
+</details>
 
 ## 质量与测试
 
