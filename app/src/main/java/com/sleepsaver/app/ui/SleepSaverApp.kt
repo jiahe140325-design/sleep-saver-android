@@ -10,12 +10,14 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
@@ -34,18 +37,31 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Coffee
+import androidx.compose.material.icons.rounded.DirectionsRun
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.People
+import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.SentimentNeutral
+import androidx.compose.material.icons.rounded.SentimentVeryDissatisfied
+import androidx.compose.material.icons.rounded.SentimentVerySatisfied
+import androidx.compose.material.icons.rounded.Spa
+import androidx.compose.material.icons.rounded.Work
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -69,24 +85,31 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sleepsaver.app.R
 import com.sleepsaver.app.data.AppSettings
 import com.sleepsaver.app.data.SleepSessionEntity
 import com.sleepsaver.app.domain.SessionPolicy
 import com.sleepsaver.app.ui.theme.Blush
+import com.sleepsaver.app.ui.theme.Cream
 import com.sleepsaver.app.ui.theme.Ink
 import com.sleepsaver.app.ui.theme.Lavender
+import com.sleepsaver.app.ui.theme.Paper
 import com.sleepsaver.app.ui.theme.Sage
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
@@ -98,6 +121,23 @@ private enum class AppTab(val title: String, val icon: ImageVector) {
 }
 
 private val cardShape = RoundedCornerShape(22.dp)
+
+private data class CheckInOption(val label: String, val icon: ImageVector)
+
+private val moodOptions = listOf(
+    CheckInOption("困得不行", Icons.Rounded.SentimentVeryDissatisfied),
+    CheckInOption("还可以", Icons.Rounded.SentimentNeutral),
+    CheckInOption("挺精神", Icons.Rounded.SentimentVerySatisfied)
+)
+
+private val bedtimeTagOptions = listOf(
+    CheckInOption("加班了", Icons.Rounded.Work),
+    CheckInOption("刷手机", Icons.Rounded.PhoneAndroid),
+    CheckInOption("想事情", Icons.Rounded.Psychology),
+    CheckInOption("喝了咖啡", Icons.Rounded.Coffee),
+    CheckInOption("运动了", Icons.Rounded.DirectionsRun),
+    CheckInOption("今天很平静", Icons.Rounded.Spa)
+)
 
 @Composable
 fun SleepSaverApp(viewModel: AppViewModel) {
@@ -136,7 +176,7 @@ fun SleepSaverApp(viewModel: AppViewModel) {
             when (selectedTab) {
                 AppTab.TODAY -> TodayScreen(state, viewModel, snackbar)
                 AppTab.CHECK_IN -> CheckInScreen(state, viewModel)
-                AppTab.JOURNAL -> JournalScreen(state.completedSessions)
+                AppTab.JOURNAL -> JournalScreen(state.completedSessions, viewModel, snackbar)
                 AppTab.FRIENDS -> FriendsUnavailableScreen()
             }
         }
@@ -145,9 +185,9 @@ fun SleepSaverApp(viewModel: AppViewModel) {
 
 @Composable
 private fun ScreenTitle(title: String, subtitle: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Ink)
-        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Ink)
+        Text(subtitle, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -159,14 +199,6 @@ private fun TodayScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var exportPayload by remember { mutableStateOf("") }
-
-    val createJson = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
-    ) { uri -> uri?.let { writeDocument(context, it, exportPayload, snackbar, scope) } }
-    val createCsv = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/csv")
-    ) { uri -> uri?.let { writeDocument(context, it, exportPayload, snackbar, scope) } }
 
     var enableReminderAfterPermission by remember { mutableStateOf(false) }
     val notificationPermission = rememberLauncherForActivityResult(
@@ -179,20 +211,18 @@ private fun TodayScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        item {
-            ScreenTitle(greeting(), LocalDate.now().format(DateTimeFormatter.ofPattern("M月d日 · EEEE")))
-        }
+        item { TodayJournalHeader() }
         if (!state.usagePermissionGranted) {
             item { UsagePermissionCard { openUsageAccessSettings(context) } }
         }
-        item { SleepSummaryCard(state.activeSession, state.latestCompleted) }
-        item { WeekProgressCard(state) }
-        item { GentleNoteCard() }
+        item { TodayTimelineCard(state.activeSession, state.latestCompleted) }
+        item { CompactWeekProgressTicket(state) }
+        item { TodayBlushMemo() }
         item {
-            SleepScheduleCard(
+            CompactSleepScheduleCard(
                 settings = state.settings,
                 onBedtime = viewModel::setBedtime,
                 onWakeTime = viewModel::setWakeTime,
@@ -213,21 +243,31 @@ private fun TodayScreen(
                 }
             )
         }
-        item {
-            ExportCard(
-                onJson = {
-                    scope.launch {
-                        exportPayload = viewModel.jsonExport()
-                        createJson.launch("sleep-saver-${LocalDate.now()}.json")
-                    }
-                },
-                onCsv = {
-                    scope.launch {
-                        exportPayload = viewModel.csvExport()
-                        createCsv.launch("sleep-saver-${LocalDate.now()}.csv")
-                    }
-                }
-            )
+    }
+}
+
+@Composable
+private fun TodayJournalHeader() {
+    val date = LocalDate.now().format(DateTimeFormatter.ofPattern("M月d日 · EEEE", Locale.CHINA))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("今天过得怎么样", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Ink)
+            Text(date, fontSize = 13.sp, color = Ink.copy(alpha = .68f))
+        }
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(Lavender.copy(alpha = .32f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Rounded.NightsStay, contentDescription = null, tint = Ink, modifier = Modifier.size(27.dp))
         }
     }
 }
@@ -248,52 +288,203 @@ private fun UsagePermissionCard(onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun SleepSummaryCard(active: SleepSessionEntity?, latest: SleepSessionEntity?) {
-    Card(shape = cardShape, colors = CardDefaults.cardColors(containerColor = Ink)) {
-        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (active != null) {
-                Text("今晚已开始记录", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                Text(formatDateTime(active.sleepCheckInAt), color = Lavender, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                Text("早起后请到“打卡”完成结算", color = Color.White.copy(alpha = .8f))
-            } else if (latest != null) {
-                Text("最近一次 · 两次打卡之间", color = Color.White.copy(alpha = .75f))
-                Text(formatDuration(latest.restWindowMinutes), color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Bold)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Metric("睡前打卡", formatTime(latest.sleepCheckInAt))
-                    Metric("早起打卡", latest.wakeCheckInAt?.let(::formatTime) ?: "—")
-                    Metric("夜间解锁", latest.nightUnlockCount?.let { "$it 次" } ?: "—")
+private fun TodayTimelineCard(active: SleepSessionEntity?, latest: SleepSessionEntity?) {
+    val session = active ?: latest
+    val durationMinutes = when {
+        active != null -> ((System.currentTimeMillis() - active.sleepCheckInAt).coerceAtLeast(0L)) / 60_000L
+        latest != null -> latest.restWindowMinutes
+        else -> null
+    }
+    val hours = durationMinutes?.div(60)
+    val minutes = durationMinutes?.rem(60)
+    val wakeValue = when {
+        active != null -> "待打卡"
+        latest?.wakeCheckInAt != null -> formatTime(latest.wakeCheckInAt)
+        else -> "—"
+    }
+    val unlockValue = when {
+        active != null -> "待结算"
+        latest == null -> "—"
+        latest.usageDataAvailable == true -> latest.nightUnlockCount?.let { "$it 次" } ?: "0 次"
+        latest.usageDataAvailable == false -> "不可用"
+        else -> "—"
+    }
+
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F1FF))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(304.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .offset(x = 21.dp, y = 37.dp)
+                    .width(3.dp)
+                    .height(216.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Lavender)
+            )
+
+            TimelineIcon(
+                icon = Icons.Rounded.NightsStay,
+                tint = Ink,
+                modifier = Modifier.offset(x = 0.dp, y = 0.dp)
+            )
+            Column(
+                modifier = Modifier.offset(x = 60.dp, y = 0.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp)
+            ) {
+                Text(if (active != null) "今晚休息" else "昨晚休息", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text("睡前打卡", color = Ink.copy(alpha = .72f), fontSize = 13.sp)
+                Text(session?.let { formatTime(it.sleepCheckInAt) } ?: "还没有记录", color = Ink, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+            }
+
+            Box(
+                modifier = Modifier
+                    .offset(x = 88.dp, y = 64.dp)
+                    .size(120.dp)
+                    .clip(CircleShape)
+                    .background(Paper)
+                    .border(BorderStroke(3.dp, Lavender), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                if (durationMinutes == null) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("等你来", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Text("打卡", color = Ink.copy(alpha = .7f), fontSize = 15.sp)
+                    }
+                } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Text("$hours", color = Ink, fontSize = 38.sp, fontWeight = FontWeight.Bold)
+                            Text(" 小时", color = Ink, fontSize = 14.sp, modifier = Modifier.padding(bottom = 7.dp))
+                        }
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Text("$minutes", color = Ink, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                            Text(" 分", color = Ink, fontSize = 13.sp, modifier = Modifier.padding(bottom = 5.dp))
+                        }
+                        if (active != null) Text("记录中", color = Sage, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
-                if (latest.usageDataAvailable == false) {
-                    Text("昨晚手机使用数据不可用", color = Blush)
-                }
-            } else {
-                Text("今晚，从一次轻轻的打卡开始", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Text("数据只存在这台手机里。", color = Color.White.copy(alpha = .75f))
+            }
+            Image(
+                painter = painterResource(R.drawable.today_timeline_mascot),
+                contentDescription = "蓝色睡帽小玩偶",
+                modifier = Modifier
+                    .offset(x = 182.dp, y = 54.dp)
+                    .size(82.dp),
+                contentScale = ContentScale.Fit
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .offset(y = 182.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                TimelineEventRow(
+                    icon = Icons.Rounded.WbSunny,
+                    tint = Color(0xFFE4A31A),
+                    label = "早起打卡",
+                    value = wakeValue
+                )
+                TimelineEventRow(
+                    icon = Icons.Rounded.Lock,
+                    tint = Ink,
+                    label = "夜间解锁",
+                    value = unlockValue
+                )
             }
         }
     }
 }
 
 @Composable
-private fun Metric(label: String, value: String) {
-    Column {
-        Text(label, color = Color.White.copy(alpha = .6f), fontSize = 12.sp)
-        Text(value, color = Color.White, fontWeight = FontWeight.SemiBold)
+private fun TimelineEventRow(icon: ImageVector, tint: Color, label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TimelineIcon(icon = icon, tint = tint)
+        Spacer(Modifier.width(18.dp))
+        TimelineValue(label = label, value = value)
     }
 }
 
 @Composable
-private fun WeekProgressCard(state: AppUiState) {
+private fun TimelineIcon(icon: ImageVector, tint: Color, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(42.dp)
+            .clip(CircleShape)
+            .background(Paper)
+            .border(BorderStroke(2.dp, Lavender), CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+    }
+}
+
+@Composable
+private fun TimelineValue(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(0.dp)) {
+        Text(label, color = Ink.copy(alpha = .72f), fontSize = 12.sp, lineHeight = 15.sp, maxLines = 1)
+        Text(value, color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp, lineHeight = 22.sp, maxLines = 1)
+    }
+}
+
+@Composable
+private fun CompactWeekProgressTicket(state: AppUiState) {
     val target = state.settings.targetSleepMinutes * 7L
     val progress = if (target == 0L) 0f else (state.weekRestMinutes.toFloat() / target).coerceIn(0f, 1f)
-    Card(shape = cardShape) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, Color(0xFFE7D7B4)),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF9EA))
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("本周目标", fontWeight = FontWeight.Bold)
-                Text("${state.weekRestMinutes / 60}/${target / 60} 小时")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Flag, contentDescription = null, tint = Sage, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("本周目标", fontWeight = FontWeight.Bold, color = Ink)
+                }
+                Text("${state.weekRestMinutes / 60}/${target / 60} 小时", color = Ink, fontWeight = FontWeight.SemiBold)
             }
-            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-            Text("目标 7 小时/晚 · 记录的是两次打卡之间的休息窗口", fontSize = 12.sp)
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth(),
+                color = Sage,
+                trackColor = Color(0xFFE8DFCF)
+            )
+            Text("记录的是两次打卡之间的休息窗口", color = Ink.copy(alpha = .72f), fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
+private fun TodayBlushMemo() {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFE1E3))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 17.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("今晚放过自己", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text("睡眠不是任务，是给白天的自己充电。", color = Ink.copy(alpha = .74f), fontSize = 12.sp)
+            }
+            Icon(Icons.Rounded.FavoriteBorder, contentDescription = null, tint = Color(0xFFE77A98), modifier = Modifier.size(28.dp))
         }
     }
 }
@@ -309,40 +500,58 @@ private fun GentleNoteCard() {
 }
 
 @Composable
-private fun SleepScheduleCard(
+private fun CompactSleepScheduleCard(
     settings: AppSettings,
     onBedtime: (Int, Int) -> Unit,
     onWakeTime: (Int, Int) -> Unit,
     onReminderChange: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
-    Card(shape = cardShape) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.AccessTime, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("睡眠定时", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Switch(checked = settings.reminderEnabled, onCheckedChange = onReminderChange)
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, Color(0xFFE3D8C7)),
+        colors = CardDefaults.cardColors(containerColor = Paper)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Lavender.copy(alpha = .34f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.AccessTime, contentDescription = null, tint = Ink)
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("睡眠定时", color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 TimeButton(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier,
                     label = "就寝",
                     hour = settings.bedtimeHour,
                     minute = settings.bedtimeMinute
                 ) {
                     showTimePicker(context, settings.bedtimeHour, settings.bedtimeMinute, onBedtime)
                 }
+                Text("→", color = Lavender, fontWeight = FontWeight.Bold)
                 TimeButton(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier,
                     label = "起床",
                     hour = settings.wakeHour,
                     minute = settings.wakeMinute
                 ) {
                     showTimePicker(context, settings.wakeHour, settings.wakeMinute, onWakeTime)
                 }
+                }
+                Text("每晚重复 · 提前 ${settings.reminderAdvanceMinutes} 分钟提醒", color = Ink.copy(alpha = .66f), fontSize = 10.sp)
             }
-            Text("每晚重复 · 提前 ${settings.reminderAdvanceMinutes} 分钟提醒", fontSize = 12.sp)
+            Switch(checked = settings.reminderEnabled, onCheckedChange = onReminderChange)
         }
     }
 }
@@ -355,24 +564,29 @@ private fun TimeButton(
     minute: Int,
     onClick: () -> Unit
 ) {
-    OutlinedButton(onClick = onClick, modifier = modifier) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, fontSize = 12.sp)
-            Text("%02d:%02d".format(hour, minute), fontWeight = FontWeight.Bold, fontSize = 20.sp)
-        }
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.height(32.dp),
+        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
+        border = BorderStroke(1.dp, Lavender.copy(alpha = .7f))
+    ) {
+        Text("%02d:%02d".format(hour, minute), color = Ink, fontWeight = FontWeight.Bold, fontSize = 13.sp)
     }
 }
 
 @Composable
 private fun ExportCard(onJson: () -> Unit, onCsv: () -> Unit) {
-    Card(shape = cardShape) {
+    Card(
+        shape = cardShape,
+        colors = CardDefaults.cardColors(containerColor = Lavender.copy(alpha = .28f))
+    ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Download, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("导出我的数据", fontWeight = FontWeight.Bold)
+                Text("数据管理", fontWeight = FontWeight.Bold)
             }
-            Text("导出时由你选择保存位置；应用不会自行读取其他文件。", fontSize = 13.sp)
+            Text("需要备份或自己分析时再导出。保存位置由你选择，应用不会自行读取其他文件。", fontSize = 13.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = onJson) { Text("导出 JSON") }
                 OutlinedButton(onClick = onCsv) { Text("导出 CSV") }
@@ -381,87 +595,67 @@ private fun ExportCard(onJson: () -> Unit, onCsv: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CheckInScreen(state: AppUiState, viewModel: AppViewModel) {
     val context = LocalContext.current
     var mood by remember(state.activeSession?.id) { mutableStateOf<String?>(null) }
     var selectedTags by remember(state.activeSession?.id) { mutableStateOf(setOf<String>()) }
-    val beforeMoods = listOf("超累", "有点累", "还行", "精神", "清醒")
-    val wakeMoods = listOf("精神", "还行", "有点累", "很困")
-    val tags = listOf("加班了", "刷手机", "想事情", "喝了咖啡", "运动了", "今天很平静")
+    val isBedtime = state.activeSession == null
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
             ScreenTitle(
-                if (state.activeSession == null) "睡前打卡" else "早起打卡",
-                if (state.activeSession == null) "告诉自己：今天到这里就好" else "记录醒来时真实的感觉"
+                if (isBedtime) "睡前打卡" else "早起打卡",
+                if (isBedtime) "告诉自己：今天到这里就好" else "慢慢醒来，记录真实的感觉"
+            )
+        }
+        item {
+            CheckInJournalHero(
+                note = if (isBedtime) "把今天的小事\n都放心放下吧" else "新的一天醒来了\n先听听身体的感觉"
             )
         }
         if (!state.usagePermissionGranted) {
             item { UsagePermissionCard { openUsageAccessSettings(context) } }
         }
-        if (state.activeSession == null) {
+        if (isBedtime) {
             item {
-                ChoiceCard("现在感觉怎么样？") {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        beforeMoods.forEach { label ->
-                            FilterChip(selected = mood == label, onClick = { mood = label }, label = { Text(label) })
-                        }
+                CheckInJournalSheet(
+                    mood = mood,
+                    onMoodSelected = { mood = it },
+                    selectedTags = selectedTags,
+                    onTagSelected = { label ->
+                        selectedTags = if (label in selectedTags) selectedTags - label else selectedTags + label
                     }
-                }
+                )
             }
             item {
-                ChoiceCard("今晚发生了什么？可多选") {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        tags.forEach { label ->
-                            FilterChip(
-                                selected = label in selectedTags,
-                                onClick = {
-                                    selectedTags = if (label in selectedTags) selectedTags - label else selectedTags + label
-                                },
-                                label = { Text(label) }
-                            )
-                        }
-                    }
-                }
-            }
-            item {
-                Button(
-                    onClick = { viewModel.startSleep(mood, selectedTags.toList()) },
+                PrimaryCheckInButton(
+                    text = "我要睡了 · 开始记录",
+                    icon = Icons.Rounded.NightsStay,
                     enabled = !state.busy,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.NightsStay, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("我要睡了 · 开始记录")
-                }
+                    onClick = { viewModel.startSleep(mood, selectedTags.toList()) }
+                )
             }
         } else {
             item { ActiveSessionCard(state.activeSession) }
             item {
-                ChoiceCard("醒来感觉") {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        wakeMoods.forEach { label ->
-                            FilterChip(selected = mood == label, onClick = { mood = label }, label = { Text(label) })
-                        }
-                    }
-                }
+                MoodChoiceCard(
+                    title = "醒来感觉怎么样？",
+                    mood = mood,
+                    onMoodSelected = { mood = it }
+                )
             }
             item {
-                Button(
-                    onClick = { viewModel.finishWake(mood) },
+                PrimaryCheckInButton(
+                    text = "完成早起打卡",
+                    icon = Icons.Rounded.CheckCircle,
                     enabled = !state.busy,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.CheckCircle, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("完成早起打卡")
-                }
+                    onClick = { viewModel.finishWake(mood) }
+                )
             }
             if (SessionPolicy.canUndo(state.activeSession, System.currentTimeMillis())) {
                 item {
@@ -475,12 +669,179 @@ private fun CheckInScreen(state: AppUiState, viewModel: AppViewModel) {
 }
 
 @Composable
-private fun ChoiceCard(title: String, content: @Composable () -> Unit) {
-    Card(shape = cardShape) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, fontWeight = FontWeight.Bold)
-            content()
+private fun CheckInJournalHero(note: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(136.dp)
+            .clip(cardShape)
+            .background(Cream)
+    ) {
+        Image(
+            painter = painterResource(R.drawable.checkin_journal_hero),
+            contentDescription = "抱着枕头的睡眠帽玩偶",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.CenterEnd
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(12.dp)
+                .fillMaxWidth(.50f)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Blush.copy(alpha = .72f))
+                .padding(horizontal = 11.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd · EEE")),
+                color = Ink,
+                fontSize = 10.sp
+            )
+            Text(note, color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 19.sp)
         }
+    }
+}
+
+@Composable
+private fun CheckInJournalSheet(
+    mood: String?,
+    onMoodSelected: (String) -> Unit,
+    selectedTags: Set<String>,
+    onTagSelected: (String) -> Unit
+) {
+    Card(
+        shape = cardShape,
+        colors = CardDefaults.cardColors(containerColor = Paper),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .45f))
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            JournalSectionTitle("现在感觉怎么样？")
+            MoodChoiceRow(mood = mood, onMoodSelected = onMoodSelected)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = .25f))
+            JournalSectionTitle("今晚发生了什么？", suffix = "可多选")
+            bedtimeTagOptions.chunked(3).forEach { rowOptions ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    rowOptions.forEach { option ->
+                        TagChoiceButton(
+                            modifier = Modifier.weight(1f),
+                            option = option,
+                            selected = option.label in selectedTags,
+                            onClick = { onTagSelected(option.label) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoodChoiceCard(
+    title: String,
+    mood: String?,
+    onMoodSelected: (String) -> Unit
+) {
+    Card(
+        shape = cardShape,
+        colors = CardDefaults.cardColors(containerColor = Paper),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .45f))
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            JournalSectionTitle(title)
+            MoodChoiceRow(mood = mood, onMoodSelected = onMoodSelected)
+        }
+    }
+}
+
+@Composable
+private fun JournalSectionTitle(title: String, suffix: String? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(Lavender))
+        Spacer(Modifier.width(8.dp))
+        Text(title, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
+        suffix?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
+}
+
+@Composable
+private fun MoodChoiceRow(mood: String?, onMoodSelected: (String) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        moodOptions.forEach { option ->
+            OutlinedButton(
+                onClick = { onMoodSelected(option.label) },
+                modifier = Modifier.weight(1f).height(72.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = if (mood == option.label) Lavender.copy(alpha = .32f) else Color.Transparent,
+                    contentColor = Ink
+                ),
+                border = BorderStroke(
+                    if (mood == option.label) 2.dp else 1.dp,
+                    if (mood == option.label) Lavender else MaterialTheme.colorScheme.outline.copy(alpha = .55f)
+                ),
+                contentPadding = PaddingValues(horizontal = 3.dp, vertical = 6.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(option.icon, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Text(option.label, fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TagChoiceButton(
+    modifier: Modifier,
+    option: CheckInOption,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.height(54.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = if (selected) Sage.copy(alpha = .20f) else Color.Transparent,
+            contentColor = Ink
+        ),
+        border = BorderStroke(
+            if (selected) 2.dp else 1.dp,
+            if (selected) Sage else MaterialTheme.colorScheme.outline.copy(alpha = .5f)
+        ),
+        contentPadding = PaddingValues(horizontal = 3.dp, vertical = 4.dp)
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Icon(option.icon, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text(option.label, fontSize = 11.sp, textAlign = TextAlign.Center, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun PrimaryCheckInButton(
+    text: String,
+    icon: ImageVector,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth().height(50.dp),
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        Icon(icon, contentDescription = null)
+        Spacer(Modifier.width(8.dp))
+        Text(text, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -496,69 +857,318 @@ private fun ActiveSessionCard(session: SleepSessionEntity) {
 }
 
 @Composable
-private fun JournalScreen(sessions: List<SleepSessionEntity>) {
+private fun JournalScreen(
+    sessions: List<SleepSessionEntity>,
+    viewModel: AppViewModel,
+    snackbar: SnackbarHostState
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var showDataManagement by remember { mutableStateOf(false) }
+    var exportPayload by remember { mutableStateOf("") }
+    val createJson = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let { writeDocument(context, it, exportPayload, snackbar, scope) } }
+    val createCsv = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri -> uri?.let { writeDocument(context, it, exportPayload, snackbar, scope) } }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item { ScreenTitle("睡眠手帐", "只记录，不评判") }
-        item { WeekBars(sessions.take(7).reversed()) }
+        item {
+            JournalHeader(
+                dataManagementOpen = showDataManagement,
+                onDataManagement = { showDataManagement = !showDataManagement }
+            )
+        }
+        if (showDataManagement) {
+            item {
+                ExportCard(
+                    onJson = {
+                        scope.launch {
+                            exportPayload = viewModel.jsonExport()
+                            createJson.launch("sleep-saver-${LocalDate.now()}.json")
+                        }
+                    },
+                    onCsv = {
+                        scope.launch {
+                            exportPayload = viewModel.csvExport()
+                            createCsv.launch("sleep-saver-${LocalDate.now()}.csv")
+                        }
+                    }
+                )
+            }
+        }
+        item { JournalMonthTicket(sessions) }
+        item { JournalWeekStrip(sessions) }
+        item {
+            Text(
+                "睡眠记录",
+                color = Ink,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
         if (sessions.isEmpty()) {
             item { GentleNoteCard() }
         } else {
-            items(sessions, key = { it.id }) { session -> HistoryCard(session) }
+            items(sessions, key = { it.id }) { session -> JournalHistoryPaper(session) }
         }
     }
 }
 
 @Composable
-private fun WeekBars(sessions: List<SleepSessionEntity>) {
-    Card(shape = cardShape) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("最近 7 次休息窗口", fontWeight = FontWeight.Bold)
+private fun JournalHeader(dataManagementOpen: Boolean, onDataManagement: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("睡眠手帐", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Ink)
+            Text("只记录，不评判", fontSize = 14.sp, color = Ink.copy(alpha = .64f))
+        }
+        OutlinedButton(
+            onClick = onDataManagement,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Lavender.copy(alpha = .8f)),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            modifier = Modifier.height(38.dp)
+        ) {
+            Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(5.dp))
+            Text(if (dataManagementOpen) "收起" else "数据管理", fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun JournalMonthTicket(sessions: List<SleepSessionEntity>) {
+    val currentMonth = YearMonth.now()
+    val monthSessions = sessions.filter { session ->
+        runCatching { YearMonth.from(LocalDate.parse(session.sessionDate)) == currentMonth }.getOrDefault(false)
+    }
+    val durationValues = monthSessions.mapNotNull { it.restWindowMinutes }
+    val averageMinutes = durationValues.takeIf { it.isNotEmpty() }?.average()
+    val averageBedtime = averageBedtime(monthSessions)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(170.dp)
+    ) {
+        Image(
+            painter = painterResource(R.drawable.journal_month_ticket),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.FillBounds
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 38.dp, end = 36.dp, top = 50.dp, bottom = 28.dp)
+        ) {
+            Text("${currentMonth.monthValue}月小结", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth()) {
+                JournalStat("记录", "${monthSessions.size} 晚", Modifier.weight(1f))
+                JournalStat("平均", averageMinutes?.let(::formatCompactDuration) ?: "—", Modifier.weight(1f))
+                JournalStat("平均入睡", averageBedtime, Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun JournalStat(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(1.dp)
+    ) {
+        Text(label, color = Ink.copy(alpha = .62f), fontSize = 10.sp, maxLines = 1)
+        Text(value, color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
+@Composable
+private fun JournalWeekStrip(sessions: List<SleepSessionEntity>) {
+    val today = LocalDate.now()
+    val days = (6 downTo 0).map { today.minusDays(it.toLong()) }
+    val sessionsByDate = sessions.associateBy { it.sessionDate }
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF4EEFA))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 13.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("最近 7 晚", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Row(
-                modifier = Modifier.fillMaxWidth().height(140.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
                 verticalAlignment = Alignment.Bottom
             ) {
-                sessions.forEach { session ->
-                    val hours = (session.restWindowMinutes ?: 0L) / 60f
-                    val barHeight = (hours / 10f * 110f).coerceIn(8f, 110f)
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                days.forEach { date ->
+                    val session = sessionsByDate[date.toString()]
+                    val minutes = session?.restWindowMinutes
+                    val isToday = date == today
+                    val outline = if (isToday) {
+                        Modifier.border(BorderStroke(2.dp, Lavender), RoundedCornerShape(15.dp))
+                    } else {
+                        Modifier
+                    }
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .then(outline)
+                            .padding(horizontal = 2.dp, vertical = 5.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text("${date.monthValue}/${date.dayOfMonth}", color = Ink, fontSize = 10.sp, maxLines = 1)
+                        Text(chineseWeekday(date), color = Ink.copy(alpha = .72f), fontSize = 9.sp, maxLines = 1)
                         Box(
-                            Modifier
-                                .width(24.dp)
-                                .height(barHeight.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (session == sessions.lastOrNull()) Blush else Sage)
-                        )
-                        Text(session.sessionDate.takeLast(2), fontSize = 11.sp)
+                            modifier = Modifier
+                                .width(22.dp)
+                                .height(62.dp)
+                                .clip(RoundedCornerShape(11.dp))
+                                .background(Lavender.copy(alpha = .13f)),
+                            contentAlignment = Alignment.BottomCenter
+                        ) {
+                            if (minutes != null) {
+                                val barHeight = ((minutes / 600f) * 62f).coerceIn(8f, 62f)
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(barHeight.dp)
+                                        .clip(RoundedCornerShape(11.dp))
+                                        .background(Sage)
+                                )
+                            }
+                        }
+                        Text(minutes?.let(::formatClockDuration) ?: "—", color = Ink.copy(alpha = .78f), fontSize = 9.sp, maxLines = 1)
                     }
                 }
-                if (sessions.isEmpty()) Text("打卡后这里会长出一周的小柱子")
             }
         }
     }
 }
 
 @Composable
-private fun HistoryCard(session: SleepSessionEntity) {
-    Card(shape = cardShape) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(session.sessionDate, fontWeight = FontWeight.Bold)
-                Text(formatDuration(session.restWindowMinutes), fontWeight = FontWeight.Bold, color = Sage)
+private fun JournalHistoryPaper(session: SleepSessionEntity) {
+    val mood = session.moodAfterWake ?: session.moodBeforeSleep
+    val tag = session.tags().firstOrNull()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(250.dp)
+    ) {
+        Image(
+            painter = painterResource(R.drawable.journal_history_paper),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.FillBounds
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 48.dp, end = 28.dp, top = 32.dp, bottom = 26.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(formatJournalDate(session.sessionDate), color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.NightsStay, contentDescription = null, tint = Ink, modifier = Modifier.size(19.dp))
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    "${formatTime(session.sleepCheckInAt)} → ${session.wakeCheckInAt?.let(::formatTime) ?: "未完成"}",
+                    color = Ink,
+                    fontSize = 16.sp
+                )
             }
-            Text("${formatTime(session.sleepCheckInAt)} → ${session.wakeCheckInAt?.let(::formatTime) ?: "未完成"}")
-            if (session.usageDataAvailable == true) {
-                Text("睡前 30 分钟 ${session.preSleepPhoneMinutes ?: 0} 分 · 夜间解锁 ${session.nightUnlockCount ?: 0} 次 / ${session.nightPhoneMinutes ?: 0} 分")
-            } else if (session.usageDataAvailable == false) {
-                Text("手机使用数据不可用", color = Blush)
+            Text(formatDuration(session.restWindowMinutes), color = Ink, fontSize = 31.sp, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                mood?.let { JournalStamp(it, moodIcon(it), Lavender) }
+                tag?.let { JournalStamp(it, tagIcon(it), Sage) }
             }
-            if (session.tags().isNotEmpty()) Text(session.tags().joinToString(" · "), fontSize = 13.sp)
+            Spacer(Modifier.weight(1f))
+            HorizontalDivider(color = Color(0xFFE8D9BE))
+            Text(historyUsageText(session), color = Ink.copy(alpha = .62f), fontSize = 11.sp, maxLines = 1)
         }
     }
+}
+
+@Composable
+private fun JournalStamp(label: String, icon: ImageVector, color: Color) {
+    Card(
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, color.copy(alpha = .9f)),
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .12f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = Ink, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(5.dp))
+            Text(label, color = Ink, fontSize = 12.sp, maxLines = 1)
+        }
+    }
+}
+
+private fun averageBedtime(sessions: List<SleepSessionEntity>): String {
+    if (sessions.isEmpty()) return "—"
+    val shiftedMinutes = sessions.map { session ->
+        val time = Instant.ofEpochMilli(session.sleepCheckInAt)
+            .atZone(ZoneId.systemDefault())
+            .toLocalTime()
+        val minutes = time.hour * 60 + time.minute
+        if (time.hour < 12) minutes + 24 * 60 else minutes
+    }
+    val average = shiftedMinutes.average().roundToInt() % (24 * 60)
+    return "%02d:%02d".format(average / 60, average % 60)
+}
+
+private fun formatCompactDuration(minutes: Double): String {
+    val rounded = minutes.roundToInt().coerceAtLeast(0)
+    return "${rounded / 60}时${rounded % 60}分"
+}
+
+private fun formatClockDuration(minutes: Long): String =
+    "${minutes / 60}:${(minutes % 60).toString().padStart(2, '0')}"
+
+private fun chineseWeekday(date: LocalDate): String = when (date.dayOfWeek.value) {
+    1 -> "周一"
+    2 -> "周二"
+    3 -> "周三"
+    4 -> "周四"
+    5 -> "周五"
+    6 -> "周六"
+    else -> "周日"
+}
+
+private fun formatJournalDate(date: String): String = runCatching {
+    val parsed = LocalDate.parse(date)
+    "${parsed.monthValue}月${parsed.dayOfMonth}日  ${chineseWeekday(parsed)}"
+}.getOrDefault(date)
+
+private fun moodIcon(label: String): ImageVector = moodOptions.firstOrNull { it.label == label }?.icon
+    ?: Icons.Rounded.SentimentNeutral
+
+private fun tagIcon(label: String): ImageVector = bedtimeTagOptions.firstOrNull { it.label == label }?.icon
+    ?: Icons.Rounded.MenuBook
+
+private fun historyUsageText(session: SleepSessionEntity): String = when (session.usageDataAvailable) {
+    true -> "夜间解锁 ${session.nightUnlockCount ?: 0} 次 · 睡前使用 ${session.preSleepPhoneMinutes ?: 0} 分钟"
+    false -> "手机使用数据不可用"
+    null -> "手机使用数据未记录"
 }
 
 @Composable

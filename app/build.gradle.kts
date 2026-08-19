@@ -13,8 +13,8 @@ android {
         applicationId = "com.sleepsaver.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.2.2-dev"
+        versionCode = 9
+        versionName = "1.3.5-dev"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
