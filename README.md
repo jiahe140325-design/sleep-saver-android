@@ -81,14 +81,31 @@
 
 ## 界面与版本演变
 
-为了不把设计稿或尚未完成验收的截图冒充真实效果，这里只保留已经确认来源的实机截图。以下图片来自 `1.2.2-dev` 在小米 14 Pro 上的早期安装效果，用于记录项目的迭代起点，**不代表 `1.3.5-dev` 的当前界面**。
+### 当前实机界面 · `1.3.5-dev`
+
+以下截图来自 `1.3.5-dev` 在小米 14 Pro / HyperOS 上的实际安装效果，拍摄于 2026 年 8 月 20 日。点击图片可以查看原始完整截图。
+
+<p align="center">
+  <a href="docs/screenshots/actual/v1.3.5/01-today-xiaomi14pro.jpg"><img src="docs/screenshots/actual/v1.3.5/01-today-xiaomi14pro.jpg" height="460" alt="拯救睡眠 1.3.5-dev 小米 14 Pro 实机今日页"></a>
+  <a href="docs/screenshots/actual/v1.3.5/02-checkin-bedtime-xiaomi14pro.jpg"><img src="docs/screenshots/actual/v1.3.5/02-checkin-bedtime-xiaomi14pro.jpg" height="460" alt="拯救睡眠 1.3.5-dev 小米 14 Pro 实机睡前打卡页"></a>
+  <a href="docs/screenshots/actual/v1.3.5/03-journal-xiaomi14pro.jpg"><img src="docs/screenshots/actual/v1.3.5/03-journal-xiaomi14pro.jpg" height="460" alt="拯救睡眠 1.3.5-dev 小米 14 Pro 实机睡眠手帐完整长截图"></a>
+  <a href="docs/screenshots/actual/v1.3.5/04-friends-xiaomi14pro.jpg"><img src="docs/screenshots/actual/v1.3.5/04-friends-xiaomi14pro.jpg" height="460" alt="拯救睡眠 1.3.5-dev 小米 14 Pro 实机好友暂未开放页"></a>
+</p>
+
+<p align="center"><sub>今日 · 睡前打卡 · 睡眠手帐（完整长截图）· 好友暂未开放</sub></p>
+
+<details>
+  <summary>查看 <code>1.2.2-dev</code> 早期实机截图</summary>
+
+以下图片用于记录项目最初的安装效果，不代表当前界面。
 
 <p>
-  <img src="docs/screenshots/actual/01-today-xiaomi14pro.jpg" width="190" alt="小米 14 Pro 实机今日页">
-  <img src="docs/screenshots/actual/02-checkin-bedtime-xiaomi14pro.jpg" width="190" alt="小米 14 Pro 实机睡前打卡页">
-  <img src="docs/screenshots/actual/03-journal-xiaomi14pro.jpg" width="190" alt="小米 14 Pro 实机睡眠手帐页">
-  <img src="docs/screenshots/actual/04-friends-xiaomi14pro.jpg" width="190" alt="小米 14 Pro 实机好友暂未开放页">
+  <img src="docs/screenshots/actual/01-today-xiaomi14pro.jpg" width="190" alt="拯救睡眠 1.2.2-dev 小米 14 Pro 实机今日页">
+  <img src="docs/screenshots/actual/02-checkin-bedtime-xiaomi14pro.jpg" width="190" alt="拯救睡眠 1.2.2-dev 小米 14 Pro 实机睡前打卡页">
+  <img src="docs/screenshots/actual/03-journal-xiaomi14pro.jpg" width="190" alt="拯救睡眠 1.2.2-dev 小米 14 Pro 实机睡眠手帐页">
+  <img src="docs/screenshots/actual/04-friends-xiaomi14pro.jpg" width="190" alt="拯救睡眠 1.2.2-dev 小米 14 Pro 实机好友暂未开放页">
 </p>
+</details>
 
 ## 原始设计参考
 
