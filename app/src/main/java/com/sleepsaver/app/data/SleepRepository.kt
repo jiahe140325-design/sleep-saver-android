@@ -16,6 +16,7 @@ class SleepRepository(private val dao: SleepSessionDao) {
     suspend fun startSession(
         moodBeforeSleep: String?,
         tags: List<String>,
+        settings: AppSettings,
         now: Long = System.currentTimeMillis()
     ): StartSessionResult = writeMutex.withLock {
         if (dao.getActiveOnce() != null) return@withLock StartSessionResult.ALREADY_ACTIVE
@@ -24,6 +25,10 @@ class SleepRepository(private val dao: SleepSessionDao) {
             SleepSessionEntity(
                 sessionDate = SleepSessionEntity.sessionDate(now),
                 sleepCheckInAt = now,
+                plannedBedtimeHour = settings.bedtimeHour,
+                plannedBedtimeMinute = settings.bedtimeMinute,
+                plannedWakeHour = settings.wakeHour,
+                plannedWakeMinute = settings.wakeMinute,
                 moodBeforeSleep = moodBeforeSleep,
                 tagsJson = JSONArray(tags).toString(),
                 createdAt = now,

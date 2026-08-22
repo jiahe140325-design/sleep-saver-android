@@ -6,6 +6,18 @@ import com.sleepsaver.app.data.SleepSessionEntity
 import com.sleepsaver.app.domain.SessionPolicy
 import com.sleepsaver.app.domain.SessionState
 import com.sleepsaver.app.reminder.ReminderConstants
+import com.sleepsaver.app.ui.JOURNAL_DEVIATION_LABEL_WIDTH_DP
+import com.sleepsaver.app.ui.JOURNAL_DEVIATION_LABEL_HEIGHT_DP
+import com.sleepsaver.app.ui.JOURNAL_DEVIATION_LABEL_TOP_OFFSET_DP
+import com.sleepsaver.app.ui.JOURNAL_DEVIATION_MASCOT_HALF_SIZE_DP
+import com.sleepsaver.app.ui.JOURNAL_DEVIATION_INLINE_GAP_DP
+import com.sleepsaver.app.ui.JOURNAL_DEVIATION_INLINE_POINT_LIMIT
+import com.sleepsaver.app.ui.JOURNAL_DEVIATION_POINT_SPACING_DP
+import com.sleepsaver.app.ui.JOURNAL_DEVIATION_SIDE_PADDING_DP
+import com.sleepsaver.app.ui.journalDateFromUtcMillis
+import com.sleepsaver.app.ui.journalDateRangeCanConfirm
+import com.sleepsaver.app.ui.journalDateToUtcMillis
+import com.sleepsaver.app.ui.journalDeviationChartWidthDp
 import com.sleepsaver.app.usage.UsageEventRecord
 import com.sleepsaver.app.usage.UsageStatsAnalyzer
 import com.sleepsaver.app.usage.UsageSummary
@@ -14,6 +26,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
 
 class SleepSaverLogicTest {
     private val sleepAt = 1_800_000_000_000L
@@ -151,7 +164,7 @@ class SleepSaverLogicTest {
     fun `15 database policy forbids destructive migration`() {
         assertFalse(PersistencePolicy.ALLOW_DESTRUCTIVE_MIGRATION)
         assertFalse(PersistencePolicy.AUTO_BACKUP_ENABLED)
-        assertEquals(1, PersistencePolicy.DATABASE_VERSION)
+        assertEquals(2, PersistencePolicy.DATABASE_VERSION)
     }
 
     @Test
@@ -167,6 +180,52 @@ class SleepSaverLogicTest {
         val afterEdit = ReminderConstants.UNIQUE_WORK_NAME
         assertEquals("sleep-saver-bedtime-reminder", beforeEdit)
         assertEquals(beforeEdit, afterEdit)
+    }
+
+    @Test
+    fun `18 deviation labels keep horizontal and vertical safety gaps`() {
+        val compactViewport = 264
+        assertEquals(compactViewport, journalDeviationChartWidthDp(compactViewport, 7))
+        assertEquals(308, journalDeviationChartWidthDp(308, 7))
+        assertTrue(JOURNAL_DEVIATION_SIDE_PADDING_DP >= JOURNAL_DEVIATION_LABEL_WIDTH_DP / 2)
+
+        for (pointCount in 2..JOURNAL_DEVIATION_INLINE_POINT_LIMIT) {
+            val chartWidth = journalDeviationChartWidthDp(compactViewport, pointCount)
+            val availableWidth = chartWidth - JOURNAL_DEVIATION_SIDE_PADDING_DP * 2
+            val actualPointSpacing = availableWidth / (pointCount - 1)
+            assertEquals(compactViewport, chartWidth)
+            assertTrue(
+                actualPointSpacing - JOURNAL_DEVIATION_LABEL_WIDTH_DP >=
+                    JOURNAL_DEVIATION_INLINE_GAP_DP
+            )
+        }
+
+        for (pointCount in (JOURNAL_DEVIATION_INLINE_POINT_LIMIT + 1)..31) {
+            val chartWidth = journalDeviationChartWidthDp(308, pointCount)
+            val availableWidth = chartWidth - JOURNAL_DEVIATION_SIDE_PADDING_DP * 2
+            val actualPointSpacing = availableWidth / (pointCount - 1)
+            assertEquals(JOURNAL_DEVIATION_POINT_SPACING_DP, actualPointSpacing)
+            assertTrue(actualPointSpacing - JOURNAL_DEVIATION_LABEL_WIDTH_DP >= 8)
+        }
+
+        val labelToMascotGap = JOURNAL_DEVIATION_LABEL_TOP_OFFSET_DP -
+            JOURNAL_DEVIATION_LABEL_HEIGHT_DP -
+            JOURNAL_DEVIATION_MASCOT_HALF_SIZE_DP
+        assertTrue(labelToMascotGap >= 3)
+    }
+
+    @Test
+    fun `19 custom date range confirms once only after both dates are selected`() {
+        val start = LocalDate.of(2026, 8, 1)
+        val end = LocalDate.of(2026, 8, 22)
+        val startMillis = journalDateToUtcMillis(start)
+        val endMillis = journalDateToUtcMillis(end)
+
+        assertFalse(journalDateRangeCanConfirm(null, null))
+        assertFalse(journalDateRangeCanConfirm(startMillis, null))
+        assertTrue(journalDateRangeCanConfirm(startMillis, endMillis))
+        assertEquals(start, journalDateFromUtcMillis(startMillis))
+        assertEquals(end, journalDateFromUtcMillis(endMillis))
     }
 
     private fun summary(vararg events: UsageEventRecord): UsageSummary =
@@ -196,4 +255,3 @@ class SleepSaverLogicTest {
     private fun minutes(value: Int): Long = value * 60_000L
     private fun hours(value: Int): Long = value * 60L * 60_000L
 }
-

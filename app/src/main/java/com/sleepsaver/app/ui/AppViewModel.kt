@@ -78,9 +78,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startSleep(mood: String?, tags: List<String>) {
+        val settings = uiState.value.settings
         viewModelScope.launch {
             busy.value = true
-            when (sleepRepository.startSession(mood, tags)) {
+            when (sleepRepository.startSession(mood, tags, settings)) {
                 StartSessionResult.CREATED -> _messages.emit("睡前打卡完成，今晚开始记录")
                 StartSessionResult.ALREADY_ACTIVE -> _messages.emit("今晚已经开始记录，请勿重复打卡")
             }
@@ -144,4 +145,3 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         DataExporter.toCsv(sleepRepository.allSessionsOnce())
     }
 }
-

@@ -13,5 +13,8 @@ local.properties
 build/
 **/build/
 captures/
+
+# Local device QA screenshots may contain personal dates or sleep times.
+design-assets/qa/
 .externalNativeBuild/
 .cxx/

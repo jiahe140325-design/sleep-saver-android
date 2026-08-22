@@ -24,16 +24,17 @@
 
 接下来我会把它当作一个长期自我实验，看看连续使用 7 天、14 天、30 天后，它到底能不能让我更早放下手机、慢慢建立规律作息。
 
-> **当前版本：`1.3.5-dev` · 支持 Android 10 及以上**<br>
-> 今日页、打卡页和睡眠手帐已完成第一轮「小手帐」风格迭代。这是正在验证中的个人项目，不是医疗设备，也不能代替专业睡眠诊断。
+> **当前版本：`1.3.12-dev` · 支持 Android 10 及以上**<br>
+> 手帐页已完成趋势、计划偏离、日期筛选和悬浮详情迭代；今日页与打卡页继续沿用「小手帐」风格。这是正在验证中的个人项目，不是医疗设备，也不能代替专业睡眠诊断。
 
-[⬇️ 直接下载 Android APK](https://github.com/jiahe140325-design/sleep-saver-android/releases/download/v1.3.5-dev/SleepSaver-1.3.5-dev.apk) · [查看版本说明](https://github.com/jiahe140325-design/sleep-saver-android/releases/tag/v1.3.5-dev) · [查看完整更新记录](CHANGELOG.md)
+[⬇️ 直接下载 Android APK](https://github.com/jiahe140325-design/sleep-saver-android/releases/download/v1.3.12-dev/SleepSaver-1.3.12-dev.apk) · [查看版本说明](https://github.com/jiahe140325-design/sleep-saver-android/releases/tag/v1.3.12-dev) · [查看完整更新记录](CHANGELOG.md)
 
 ### 这一版做了什么？
 
-- 🕰️ 「今日」用一条时间线讲清昨晚从睡前打卡到早起打卡发生了什么。
-- 📔 「打卡」改成小手帐：3 种状态、6 种睡前事件，记录过程不再只是干巴巴的文字按钮。
-- 📊 「手帐」加入当月小结、最近 7 晚和纸张式历史记录，数据管理也移到了更容易找到的位置。
+- 📊 「手帐」新增平均睡眠时长胶带图和平均偏离计划玩偶图，重点观察是否睡够、是否如期睡。
+- 🗓️ 支持近 7 晚、近 30 晚和自定义日期范围，并可按日、按周或按月汇总。
+- 📔 睡眠记录收进同页悬浮详情，需要时再展开，不再长期挤占趋势空间。
+- 🧭 近 7 晚默认完整展示；长区间优先定位到最新记录；自定义日期在一个日历中一次确认。
 - 🔒 好友功能仍显示「暂未开放」；睡眠数据继续只保存在手机本地。
 
 ## 下载与安装
@@ -46,7 +47,7 @@
 
 ### 通用安卓安装步骤
 
-1. 点击 [直接下载 `SleepSaver-1.3.5-dev.apk`](https://github.com/jiahe140325-design/sleep-saver-android/releases/download/v1.3.5-dev/SleepSaver-1.3.5-dev.apk)。如果直链没有开始下载，也可以前往 [版本发布页](https://github.com/jiahe140325-design/sleep-saver-android/releases/tag/v1.3.5-dev)，展开 `Assets` 后选择同名 APK。不要下载 `Source code` 压缩包。
+1. 点击 [直接下载 `SleepSaver-1.3.12-dev.apk`](https://github.com/jiahe140325-design/sleep-saver-android/releases/download/v1.3.12-dev/SleepSaver-1.3.12-dev.apk)。如果直链没有开始下载，也可以前往 [版本发布页](https://github.com/jiahe140325-design/sleep-saver-android/releases/tag/v1.3.12-dev)，展开 `Assets` 后选择同名 APK。不要下载 `Source code` 压缩包。
    - 成功标志：下载后的文件名以 `.apk` 结尾。
 2. 在系统通知栏或「文件管理」的下载目录中点击 APK。如果系统询问是否允许当前应用安装未知来源应用，按照提示临时允许。
    - 成功标志：进入显示「拯救睡眠」名称和图标的系统安装页面。
@@ -58,7 +59,7 @@
 ### 小米 / HyperOS 特别提示
 
 - 如果出现「增强防护」提示，点击安装页面右上角菜单，选择「单次安装授权」，再继续安装。
-- 如果微信把文件保存成类似 `SleepSaver-1.3.5-dev.apk.2`，请先在系统「文件管理」中将末尾的 `.2` 删除，确保文件名以 `.apk` 结尾后再打开。
+- 如果微信把文件保存成类似 `SleepSaver-1.3.12-dev.apk.2`，请先在系统「文件管理」中将末尾的 `.2` 删除，确保文件名以 `.apk` 结尾后再打开。
 
 ## 核心功能
 
@@ -67,7 +68,8 @@
 - 睡眠定时与本地通知提醒。
 - 3 种状态与 6 种睡前事件组成的小手帐式打卡。
 - 今日睡眠时间线与本周休息目标。
-- 当月小结、最近 7 晚趋势和纸张式历史记录。
+- 睡眠时长、偏离计划双趋势图与可自由选择的统计时间段。
+- 同页展开的单晚详情、计划时间快照与非破坏性数据库升级。
 - JSON / CSV 数据导出与本地持久化。
 - 好友入口暂时保留，当前显示「暂未开放」。
 
@@ -81,9 +83,9 @@
 
 ## 界面与版本演变
 
-### 当前实机界面 · `1.3.5-dev`
+### 已归档实机界面 · `1.3.5-dev`
 
-以下截图来自 `1.3.5-dev` 在小米 14 Pro / HyperOS 上的实际安装效果，拍摄于 2026 年 8 月 20 日。点击图片可以查看原始完整截图。
+以下截图来自 `1.3.5-dev` 在小米 14 Pro / HyperOS 上的实际安装效果，拍摄于 2026 年 8 月 20 日，用于保留版本演变证据，**不代表 `1.3.12-dev` 当前界面**。点击图片可以查看原始完整截图。
 
 <p align="center">
   <a href="docs/screenshots/actual/v1.3.5/01-today-xiaomi14pro.jpg"><img src="docs/screenshots/actual/v1.3.5/01-today-xiaomi14pro.jpg" height="460" alt="拯救睡眠 1.3.5-dev 小米 14 Pro 实机今日页"></a>
@@ -125,8 +127,8 @@
 
 ## 质量与测试
 
-- 17 项本地自动化逻辑测试全部通过。
-- 测试场景覆盖通知亮屏、指纹解锁、跨零点、重复打卡、进程恢复、权限失效和提醒更新等情况。
+- 19 项本地自动化逻辑测试全部通过。
+- 测试覆盖通知亮屏、指纹解锁、跨零点、重复打卡、进程恢复、权限失效、提醒更新、近 7 晚布局和日期范围确认等情况。
 - 自动化结果与小米 14 Pro 真机结果分开记录，不用模拟测试冒充真实设备验收。
 
 详细结果见 [`docs/TEST_REPORT.md`](docs/TEST_REPORT.md)。
@@ -145,7 +147,7 @@
 ./gradlew testDebugUnitTest assembleDebug
 ```
 
-成功标志：测试通过，并生成 `app/build/outputs/apk/debug/app-debug.apk`。
+成功标志：测试通过，并生成 `app/build/outputs/apk/debug/SleepSaver-1.3.12-dev.apk`。
 
 ## 项目文档
 
