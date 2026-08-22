@@ -1,6 +1,7 @@
 package com.sleepsaver.app.ui
 
 import android.Manifest
+import android.app.AlertDialog
 import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
@@ -10,12 +11,18 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -32,14 +39,20 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccessTime
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Coffee
 import androidx.compose.material.icons.rounded.DirectionsRun
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Home
@@ -60,9 +73,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -73,6 +89,8 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -83,10 +101,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -110,6 +132,9 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
@@ -137,6 +162,47 @@ private val bedtimeTagOptions = listOf(
     CheckInOption("喝了咖啡", Icons.Rounded.Coffee),
     CheckInOption("运动了", Icons.Rounded.DirectionsRun),
     CheckInOption("今天很平静", Icons.Rounded.Spa)
+)
+
+private data class JournalWeekPoint(
+    val periodStart: LocalDate,
+    val averageSleepMinutes: Int?,
+    val averageDeviationMinutes: Int?
+)
+
+private enum class JournalRangePreset(val label: String) {
+    RECENT_7("近7晚"),
+    RECENT_30("近30晚"),
+    CUSTOM("自定义")
+}
+
+private enum class JournalGrouping(val label: String) {
+    DAY("按天"),
+    WEEK("按周"),
+    MONTH("按月")
+}
+
+private data class JournalDateRange(
+    val start: LocalDate,
+    val endInclusive: LocalDate,
+    val label: String
+) {
+    companion object {
+        fun recentDays(days: Long, label: String): JournalDateRange {
+            val end = LocalDate.now()
+            return JournalDateRange(end.minusDays(days - 1), end, label)
+        }
+    }
+}
+
+private val journalDurationTapeResources = listOf(
+    R.drawable.journal_duration_tape_1,
+    R.drawable.journal_duration_tape_2,
+    R.drawable.journal_duration_tape_3,
+    R.drawable.journal_duration_tape_4,
+    R.drawable.journal_duration_tape_5,
+    R.drawable.journal_duration_tape_6,
+    R.drawable.journal_duration_tape_7
 )
 
 @Composable
@@ -176,7 +242,7 @@ fun SleepSaverApp(viewModel: AppViewModel) {
             when (selectedTab) {
                 AppTab.TODAY -> TodayScreen(state, viewModel, snackbar)
                 AppTab.CHECK_IN -> CheckInScreen(state, viewModel)
-                AppTab.JOURNAL -> JournalScreen(state.completedSessions, viewModel, snackbar)
+                AppTab.JOURNAL -> JournalScreen(state.completedSessions, state.settings, viewModel, snackbar)
                 AppTab.FRIENDS -> FriendsUnavailableScreen()
             }
         }
@@ -859,19 +925,41 @@ private fun ActiveSessionCard(session: SleepSessionEntity) {
 @Composable
 private fun JournalScreen(
     sessions: List<SleepSessionEntity>,
+    settings: AppSettings,
     viewModel: AppViewModel,
     snackbar: SnackbarHostState
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showDataManagement by remember { mutableStateOf(false) }
+    var showRecordDetails by remember { mutableStateOf(true) }
+    var selectedSessionId by remember { mutableStateOf<Long?>(sessions.firstOrNull()?.id) }
+    var rangePreset by remember { mutableStateOf(JournalRangePreset.RECENT_7) }
+    var journalGrouping by remember { mutableStateOf(JournalGrouping.DAY) }
+    var journalRange by remember { mutableStateOf(JournalDateRange.recentDays(7, "近7晚")) }
+    var showCustomRangePicker by remember { mutableStateOf(false) }
     var exportPayload by remember { mutableStateOf("") }
+    val sessionIds = remember(sessions) { sessions.map { it.id } }
+    val journalPoints = remember(sessions, settings, journalRange, journalGrouping) {
+        buildJournalRangePoints(sessions, settings, journalRange, journalGrouping)
+    }
+    val sessionsInRange = remember(sessions, journalRange) {
+        countSessionsInRange(sessions, journalRange)
+    }
     val createJson = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri -> uri?.let { writeDocument(context, it, exportPayload, snackbar, scope) } }
     val createCsv = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv")
     ) { uri -> uri?.let { writeDocument(context, it, exportPayload, snackbar, scope) } }
+
+    LaunchedEffect(sessionIds) {
+        val firstSessionId = sessionIds.firstOrNull()
+        when {
+            selectedSessionId == null -> selectedSessionId = firstSessionId
+            selectedSessionId !in sessionIds -> selectedSessionId = firstSessionId
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -902,22 +990,56 @@ private fun JournalScreen(
                 )
             }
         }
-        item { JournalMonthTicket(sessions) }
-        item { JournalWeekStrip(sessions) }
         item {
-            Text(
-                "睡眠记录",
-                color = Ink,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            JournalRangeControls(
+                preset = rangePreset,
+                range = journalRange,
+                grouping = journalGrouping,
+                completedNights = sessionsInRange,
+                onPresetSelected = { selected ->
+                    when (selected) {
+                        JournalRangePreset.RECENT_7 -> {
+                            rangePreset = selected
+                            journalGrouping = JournalGrouping.DAY
+                            journalRange = JournalDateRange.recentDays(7, selected.label)
+                        }
+                        JournalRangePreset.RECENT_30 -> {
+                            rangePreset = selected
+                            journalGrouping = JournalGrouping.WEEK
+                            journalRange = JournalDateRange.recentDays(30, selected.label)
+                        }
+                        JournalRangePreset.CUSTOM -> {
+                            showCustomRangePicker = true
+                        }
+                    }
+                },
+                onGroupingSelected = { journalGrouping = it }
             )
         }
-        if (sessions.isEmpty()) {
-            item { GentleNoteCard() }
-        } else {
-            items(sessions, key = { it.id }) { session -> JournalHistoryPaper(session) }
+        item { JournalAverageSleepChart(journalPoints, settings, journalGrouping) }
+        item { JournalDeviationChart(journalPoints, journalGrouping) }
+        item {
+            JournalRecordDetailSection(
+                sessions = sessions,
+                expanded = showRecordDetails,
+                selectedSessionId = selectedSessionId,
+                onToggle = { showRecordDetails = !showRecordDetails },
+                onSelectSession = { selectedSessionId = it }
+            )
         }
+    }
+
+    if (showCustomRangePicker) {
+        JournalCustomRangePicker(
+            currentRange = journalRange,
+            onDismiss = { showCustomRangePicker = false },
+            onConfirm = { selectedRange ->
+                rangePreset = JournalRangePreset.CUSTOM
+                journalGrouping = JournalGrouping.WEEK
+                journalRange = selectedRange.copy(label = JournalRangePreset.CUSTOM.label)
+                showCustomRangePicker = false
+            }
+        )
     }
 }
 
@@ -931,15 +1053,16 @@ private fun JournalHeader(dataManagementOpen: Boolean, onDataManagement: () -> U
         verticalAlignment = Alignment.Top
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("睡眠手帐", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Ink)
+            Text("睡眠手帐", fontSize = 29.sp, fontWeight = FontWeight.Bold, color = Ink)
             Text("只记录，不评判", fontSize = 14.sp, color = Ink.copy(alpha = .64f))
         }
         OutlinedButton(
             onClick = onDataManagement,
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Lavender.copy(alpha = .8f)),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, Color(0xFFE8B766)),
+            colors = ButtonDefaults.outlinedButtonColors(containerColor = Paper.copy(alpha = .82f)),
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-            modifier = Modifier.height(38.dp)
+            modifier = Modifier.height(40.dp)
         ) {
             Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(5.dp))
@@ -949,112 +1072,742 @@ private fun JournalHeader(dataManagementOpen: Boolean, onDataManagement: () -> U
 }
 
 @Composable
-private fun JournalMonthTicket(sessions: List<SleepSessionEntity>) {
-    val currentMonth = YearMonth.now()
-    val monthSessions = sessions.filter { session ->
-        runCatching { YearMonth.from(LocalDate.parse(session.sessionDate)) == currentMonth }.getOrDefault(false)
-    }
-    val durationValues = monthSessions.mapNotNull { it.restWindowMinutes }
-    val averageMinutes = durationValues.takeIf { it.isNotEmpty() }?.average()
-    val averageBedtime = averageBedtime(monthSessions)
-
+private fun JournalRangeControls(
+    preset: JournalRangePreset,
+    range: JournalDateRange,
+    grouping: JournalGrouping,
+    completedNights: Int,
+    onPresetSelected: (JournalRangePreset) -> Unit,
+    onGroupingSelected: (JournalGrouping) -> Unit
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(170.dp)
+            .padding(top = 20.dp)
     ) {
-        Image(
-            painter = painterResource(R.drawable.journal_month_ticket),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.FillBounds
-        )
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 38.dp, end = 36.dp, top = 50.dp, bottom = 28.dp)
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(11.dp)
         ) {
-            Text("${currentMonth.monthValue}月小结", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
-            Row(Modifier.fillMaxWidth()) {
-                JournalStat("记录", "${monthSessions.size} 晚", Modifier.weight(1f))
-                JournalStat("平均", averageMinutes?.let(::formatCompactDuration) ?: "—", Modifier.weight(1f))
-                JournalStat("平均入睡", averageBedtime, Modifier.weight(1f))
+            JournalSegmentedControl(
+                values = JournalRangePreset.entries,
+                selected = preset,
+                label = { it.label },
+                onSelected = onPresetSelected,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.CalendarMonth,
+                    contentDescription = null,
+                    tint = Ink.copy(alpha = .72f),
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = "${formatRangeDate(range.start)}—${formatRangeDate(range.endInclusive)} · ${completedNights}晚",
+                    color = Ink.copy(alpha = .82f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            JournalSegmentedControl(
+                values = JournalGrouping.entries,
+                selected = grouping,
+                label = { it.label },
+                onSelected = onGroupingSelected,
+                modifier = Modifier.width(258.dp)
+            )
+        }
+        Image(
+            painter = painterResource(R.drawable.today_timeline_mascot),
+            contentDescription = null,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = (-24).dp, y = (-48).dp)
+                .size(68.dp),
+            contentScale = ContentScale.Fit
+        )
+    }
+}
+
+@Composable
+private fun <T> JournalSegmentedControl(
+    values: List<T>,
+    selected: T,
+    label: (T) -> String,
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.height(42.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Paper.copy(alpha = .92f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        border = BorderStroke(1.dp, Color(0xFFE8DDC8))
+    ) {
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            values.forEachIndexed { index, value ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxSize()
+                        .background(if (value == selected) Lavender.copy(alpha = .42f) else Color.Transparent)
+                        .clickable { onSelected(value) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = label(value),
+                        color = Ink,
+                        fontSize = 13.sp,
+                        fontWeight = if (value == selected) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
+                if (index < values.lastIndex) {
+                    Box(Modifier.width(1.dp).height(22.dp).background(Color(0xFFE8DDC8)))
+                }
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun JournalStat(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(1.dp)
+private fun JournalCustomRangePicker(
+    currentRange: JournalDateRange,
+    onDismiss: () -> Unit,
+    onConfirm: (JournalDateRange) -> Unit
+) {
+    val pickerState = rememberDateRangePickerState(
+        initialSelectedStartDateMillis = journalDateToUtcMillis(currentRange.start),
+        initialSelectedEndDateMillis = journalDateToUtcMillis(currentRange.endInclusive)
+    )
+
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                enabled = journalDateRangeCanConfirm(
+                    pickerState.selectedStartDateMillis,
+                    pickerState.selectedEndDateMillis
+                ),
+                onClick = {
+                    val startMillis = pickerState.selectedStartDateMillis
+                    val endMillis = pickerState.selectedEndDateMillis
+                    if (startMillis != null && endMillis != null) {
+                        val start = journalDateFromUtcMillis(startMillis)
+                        val end = journalDateFromUtcMillis(endMillis)
+                        onConfirm(
+                            JournalDateRange(
+                                start = start,
+                                endInclusive = end,
+                                label = "${start.monthValue}/${start.dayOfMonth}–${end.monthValue}/${end.dayOfMonth}"
+                            )
+                        )
+                    }
+                }
+            ) {
+                Text("确认")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
     ) {
-        Text(label, color = Ink.copy(alpha = .62f), fontSize = 10.sp, maxLines = 1)
-        Text(value, color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        DateRangePicker(
+            state = pickerState,
+            title = {
+                Text(
+                    text = "选择统计日期",
+                    modifier = Modifier.padding(start = 24.dp, top = 18.dp)
+                )
+            },
+            headline = {
+                Text(
+                    text = if (pickerState.selectedEndDateMillis == null) {
+                        "再选择结束日期"
+                    } else {
+                        "已选择日期范围"
+                    },
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 10.dp)
+                )
+            },
+            showModeToggle = false
+        )
+    }
+}
+
+internal fun journalDateRangeCanConfirm(startMillis: Long?, endMillis: Long?): Boolean =
+    startMillis != null && endMillis != null
+
+private val journalCalendarZone: ZoneId = ZoneId.of("UTC")
+
+internal fun journalDateToUtcMillis(date: LocalDate): Long =
+    date.atStartOfDay(journalCalendarZone).toInstant().toEpochMilli()
+
+internal fun journalDateFromUtcMillis(millis: Long): LocalDate =
+    Instant.ofEpochMilli(millis).atZone(journalCalendarZone).toLocalDate()
+
+@Composable
+private fun JournalAverageSleepChart(
+    points: List<JournalWeekPoint>,
+    settings: AppSettings,
+    grouping: JournalGrouping
+) {
+    val scrollState = rememberScrollState()
+    val trackTop = 30.dp
+    val trackHeight = 102.dp
+    val targetRatio = (settings.targetSleepMinutes / 540f).coerceIn(0.12f, 1f)
+    val targetLineY = trackTop + trackHeight * (1f - targetRatio)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 7.dp)
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F0FA)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+            border = BorderStroke(1.dp, Color(0xFFE8E0EF))
+        ) {
+            Column(
+                modifier = Modifier.padding(start = 14.dp, end = 12.dp, top = 17.dp, bottom = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                JournalChartTitle("平均睡眠时长")
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(176.dp)
+                ) {
+                    val viewportWidth = maxWidth
+                    val chartWidth = maxOf(viewportWidth, 45.dp * points.size.coerceAtLeast(1))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .horizontalScroll(scrollState)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(chartWidth)
+                                .height(176.dp)
+                        ) {
+                            val density = LocalDensity.current
+                            Canvas(Modifier.fillMaxSize()) {
+                                drawLine(
+                                    color = Sage.copy(alpha = .78f),
+                                    start = Offset(0f, with(density) { targetLineY.toPx() }),
+                                    end = Offset(size.width - with(density) { 30.dp.toPx() }, with(density) { targetLineY.toPx() }),
+                                    strokeWidth = 2f,
+                                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f))
+                                )
+                                drawLine(
+                                    color = Ink.copy(alpha = .24f),
+                                    start = Offset(with(density) { 6.dp.toPx() }, with(density) { 145.dp.toPx() }),
+                                    end = Offset(size.width - with(density) { 6.dp.toPx() }, with(density) { 145.dp.toPx() }),
+                                    strokeWidth = 2f
+                                )
+                            }
+                            Text(
+                                "${settings.targetSleepMinutes / 60}小时",
+                                color = Sage,
+                                fontSize = 9.sp,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(y = targetLineY - 10.dp)
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(start = 4.dp, end = 27.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                points.forEachIndexed { index, point ->
+                                    JournalAverageSleepColumn(
+                                        point = point,
+                                        tapeResource = journalDurationTapeResources[index % journalDurationTapeResources.size],
+                                        trackHeight = trackHeight,
+                                        grouping = grouping
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Image(
+            painter = painterResource(R.drawable.journal_tape_gingham),
+            contentDescription = null,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .offset(x = (-15).dp, y = (-8).dp)
+                .width(66.dp)
+                .height(34.dp),
+            contentScale = ContentScale.Fit
+        )
     }
 }
 
 @Composable
-private fun JournalWeekStrip(sessions: List<SleepSessionEntity>) {
-    val today = LocalDate.now()
-    val days = (6 downTo 0).map { today.minusDays(it.toLong()) }
-    val sessionsByDate = sessions.associateBy { it.sessionDate }
-    Card(
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF4EEFA))
+private fun JournalChartTitle(title: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.size(8.dp).background(Lavender, CircleShape))
+        Text(title, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun JournalAverageSleepColumn(
+    point: JournalWeekPoint,
+    tapeResource: Int,
+    trackHeight: androidx.compose.ui.unit.Dp,
+    grouping: JournalGrouping
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier.width(40.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 13.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        Text(
+            point.averageSleepMinutes?.let { formatClockDuration(it.toLong()) } ?: "—",
+            color = Ink,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium
+        )
+        JournalDurationTapeBar(point.averageSleepMinutes, tapeResource, trackHeight)
+        Text(
+            journalAxisLabel(point.periodStart, grouping),
+            color = Ink.copy(alpha = .78f),
+            fontSize = 9.sp
+        )
+    }
+}
+
+@Composable
+private fun JournalDurationTapeBar(
+    minutes: Int?,
+    tapeResource: Int,
+    trackHeight: androidx.compose.ui.unit.Dp
+) {
+    val fillFraction = minutes?.let { (it / 540f).coerceIn(0.16f, 1f) } ?: 0f
+    val fillHeight = trackHeight * fillFraction
+    Box(
+        modifier = Modifier
+            .width(30.dp)
+            .height(trackHeight),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        if (minutes == null) {
+            Box(
+                modifier = Modifier
+                    .width(12.dp)
+                    .height(2.dp)
+                    .background(Ink.copy(alpha = .12f), RoundedCornerShape(2.dp))
+            )
+        } else {
+            Image(
+                painter = painterResource(tapeResource),
+                contentDescription = null,
+                modifier = Modifier
+                    .width(27.dp)
+                    .height(fillHeight),
+                contentScale = ContentScale.FillBounds
+            )
+        }
+    }
+}
+
+@Composable
+private fun JournalDeviationChart(
+    points: List<JournalWeekPoint>,
+    grouping: JournalGrouping
+) {
+    val maxDeviation = max(
+        90,
+        points.mapNotNull { it.averageDeviationMinutes?.let(::abs) }.maxOrNull() ?: 90
+    )
+    val chartRange = ((maxDeviation + 29) / 30) * 30
+    val scrollState = rememberScrollState()
+    val sidePadding = JOURNAL_DEVIATION_SIDE_PADDING_DP.dp
+    val zeroLineY = 58.dp
+    val pointAmplitude = 12.dp
+    val ribbonTop = 92.dp
+    val density = LocalDensity.current
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 7.dp)
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F0FA)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+            border = BorderStroke(1.dp, Color(0xFFE8E0EF))
         ) {
-            Text("最近 7 晚", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                verticalAlignment = Alignment.Bottom
+            Column(
+                modifier = Modifier.padding(start = 14.dp, end = 12.dp, top = 14.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                days.forEach { date ->
-                    val session = sessionsByDate[date.toString()]
-                    val minutes = session?.restWindowMinutes
-                    val isToday = date == today
-                    val outline = if (isToday) {
-                        Modifier.border(BorderStroke(2.dp, Lavender), RoundedCornerShape(15.dp))
-                    } else {
-                        Modifier
-                    }
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .then(outline)
-                            .padding(horizontal = 2.dp, vertical = 5.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                JournalChartTitle("平均偏离计划")
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(148.dp)
+                ) {
+                    val viewportWidth = maxWidth
+                    val viewportWidthDp = viewportWidth.value.roundToInt()
+                    val chartWidthDp = journalDeviationChartWidthDp(viewportWidthDp, points.size)
+                    val chartWidth = chartWidthDp.dp
+                    val shouldPinLatest = chartWidthDp > viewportWidthDp
+                    LaunchedEffect(
+                        shouldPinLatest,
+                        scrollState.maxValue,
+                        points.firstOrNull()?.periodStart,
+                        points.lastOrNull()?.periodStart,
+                        grouping
                     ) {
-                        Text("${date.monthValue}/${date.dayOfMonth}", color = Ink, fontSize = 10.sp, maxLines = 1)
-                        Text(chineseWeekday(date), color = Ink.copy(alpha = .72f), fontSize = 9.sp, maxLines = 1)
+                        if (shouldPinLatest && scrollState.maxValue > 0) {
+                            scrollState.scrollTo(scrollState.maxValue)
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .horizontalScroll(scrollState)
+                    ) {
                         Box(
                             modifier = Modifier
-                                .width(22.dp)
-                                .height(62.dp)
-                                .clip(RoundedCornerShape(11.dp))
-                                .background(Lavender.copy(alpha = .13f)),
-                            contentAlignment = Alignment.BottomCenter
+                                .width(chartWidth)
+                                .height(148.dp)
                         ) {
-                            if (minutes != null) {
-                                val barHeight = ((minutes / 600f) * 62f).coerceIn(8f, 62f)
-                                Box(
+                            val step = if (points.size > 1) {
+                                (chartWidth - sidePadding * 2) / (points.size - 1)
+                            } else {
+                                0.dp
+                            }
+                            val pointXs = if (points.size == 1) {
+                                listOf(chartWidth / 2)
+                            } else {
+                                points.indices.map { sidePadding + step * it }
+                            }
+
+                            Canvas(Modifier.fillMaxSize()) {
+                                drawLine(
+                                    color = Lavender.copy(alpha = .34f),
+                                    start = Offset(0f, with(density) { zeroLineY.toPx() }),
+                                    end = Offset(size.width, with(density) { zeroLineY.toPx() }),
+                                    strokeWidth = 2f,
+                                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(9f, 7f))
+                                )
+
+                                for (index in 0 until points.lastIndex) {
+                                    val startDeviation = points[index].averageDeviationMinutes
+                                    val endDeviation = points[index + 1].averageDeviationMinutes
+                                    if (startDeviation != null && endDeviation != null) {
+                                        val start = Offset(
+                                            with(density) { pointXs[index].toPx() },
+                                            with(density) {
+                                                (zeroLineY - pointAmplitude *
+                                                    (startDeviation.toFloat() / chartRange.toFloat())).toPx()
+                                            }
+                                        )
+                                        val end = Offset(
+                                            with(density) { pointXs[index + 1].toPx() },
+                                            with(density) {
+                                                (zeroLineY - pointAmplitude *
+                                                    (endDeviation.toFloat() / chartRange.toFloat())).toPx()
+                                            }
+                                        )
+                                        drawLine(
+                                            color = Lavender,
+                                            start = start,
+                                            end = end,
+                                            strokeWidth = 5f,
+                                            cap = StrokeCap.Round
+                                        )
+                                    }
+                                }
+
+                                points.forEachIndexed { index, point ->
+                                    point.averageDeviationMinutes?.let { deviation ->
+                                        val y = zeroLineY - pointAmplitude *
+                                            (deviation.toFloat() / chartRange.toFloat())
+                                        drawLine(
+                                            color = Color(0xFFD7AAA7),
+                                            start = Offset(
+                                                with(density) { pointXs[index].toPx() },
+                                                with(density) { y.toPx() + 12.dp.toPx() }
+                                            ),
+                                            end = Offset(
+                                                with(density) { pointXs[index].toPx() },
+                                                with(density) { ribbonTop.toPx() }
+                                            ),
+                                            strokeWidth = 1.5f,
+                                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 5f))
+                                        )
+                                    }
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .offset(y = ribbonTop)
+                                    .fillMaxWidth()
+                                    .height(30.dp)
+                                    .padding(horizontal = 3.dp)
+                            ) {
+                                Image(
+                                    painter = painterResource(R.drawable.journal_plan_ribbon),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.FillBounds
+                                )
+                                Row(
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(barHeight.dp)
-                                        .clip(RoundedCornerShape(11.dp))
-                                        .background(Sage)
+                                        .fillMaxSize()
+                                        .padding(horizontal = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("计划附近", color = Ink.copy(alpha = .78f), fontSize = 9.sp)
+                                    Text("±30分钟", color = Ink.copy(alpha = .62f), fontSize = 9.sp)
+                                }
+                            }
+
+                            points.forEachIndexed { index, point ->
+                                val pointY = point.averageDeviationMinutes?.let {
+                                    zeroLineY - pointAmplitude * (it.toFloat() / chartRange.toFloat())
+                                } ?: zeroLineY
+                                point.averageDeviationMinutes?.let { deviation ->
+                                    JournalDeviationLabel(
+                                        label = formatDeviationLabel(deviation),
+                                        modifier = Modifier.offset(
+                                            x = pointXs[index] - (JOURNAL_DEVIATION_LABEL_WIDTH_DP / 2).dp,
+                                            y = pointY - JOURNAL_DEVIATION_LABEL_TOP_OFFSET_DP.dp
+                                        )
+                                    )
+                                    JournalDeviationPoint(
+                                        modifier = Modifier.offset(
+                                            x = pointXs[index] - 14.dp,
+                                            y = pointY - 14.dp
+                                        )
+                                    )
+                                } ?: Text(
+                                    "—",
+                                    color = Ink.copy(alpha = .24f),
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.offset(
+                                        x = pointXs[index] - 3.dp,
+                                        y = zeroLineY - 9.dp
+                                    )
+                                )
+                                Text(
+                                    journalAxisLabel(point.periodStart, grouping),
+                                    color = Ink.copy(alpha = .78f),
+                                    fontSize = 9.sp,
+                                    modifier = Modifier.offset(
+                                        x = pointXs[index] - 13.dp,
+                                        y = 128.dp
+                                    )
                                 )
                             }
                         }
-                        Text(minutes?.let(::formatClockDuration) ?: "—", color = Ink.copy(alpha = .78f), fontSize = 9.sp, maxLines = 1)
+                    }
+                }
+            }
+        }
+        Image(
+            painter = painterResource(R.drawable.journal_tape_polka),
+            contentDescription = null,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 9.dp, y = (-10).dp)
+                .width(70.dp)
+                .height(34.dp),
+            contentScale = ContentScale.Fit
+        )
+    }
+}
+
+internal const val JOURNAL_DEVIATION_SIDE_PADDING_DP = 18
+internal const val JOURNAL_DEVIATION_POINT_SPACING_DP = 42
+internal const val JOURNAL_DEVIATION_LABEL_WIDTH_DP = 34
+internal const val JOURNAL_DEVIATION_LABEL_HEIGHT_DP = 25
+internal const val JOURNAL_DEVIATION_LABEL_TOP_OFFSET_DP = 44
+internal const val JOURNAL_DEVIATION_MASCOT_HALF_SIZE_DP = 16
+internal const val JOURNAL_DEVIATION_INLINE_POINT_LIMIT = 7
+internal const val JOURNAL_DEVIATION_INLINE_GAP_DP = 4
+
+internal fun journalDeviationChartWidthDp(viewportWidthDp: Int, pointCount: Int): Int {
+    val safePointCount = pointCount.coerceAtLeast(1)
+    val inlineMinimumWidth = JOURNAL_DEVIATION_SIDE_PADDING_DP * 2 +
+        (JOURNAL_DEVIATION_LABEL_WIDTH_DP + JOURNAL_DEVIATION_INLINE_GAP_DP) *
+        (safePointCount - 1)
+    if (
+        safePointCount <= JOURNAL_DEVIATION_INLINE_POINT_LIMIT &&
+        viewportWidthDp >= inlineMinimumWidth
+    ) {
+        return viewportWidthDp
+    }
+    return maxOf(
+        viewportWidthDp,
+        JOURNAL_DEVIATION_SIDE_PADDING_DP * 2 +
+        JOURNAL_DEVIATION_POINT_SPACING_DP * (safePointCount - 1)
+    )
+}
+
+@Composable
+private fun JournalDeviationLabel(label: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .width(JOURNAL_DEVIATION_LABEL_WIDTH_DP.dp)
+            .height(JOURNAL_DEVIATION_LABEL_HEIGHT_DP.dp)
+    ) {
+        Image(
+            painter = painterResource(R.drawable.journal_deviation_label),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.FillBounds
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 2.dp, end = 2.dp, bottom = 4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label,
+                color = Ink,
+                fontSize = 7.5.sp,
+                lineHeight = 8.5.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+    }
+}
+
+@Composable
+private fun JournalDeviationPoint(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(28.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(R.drawable.journal_sleepy_mascot),
+            contentDescription = null,
+            modifier = Modifier.size(32.dp),
+            contentScale = ContentScale.Fit
+        )
+    }
+}
+
+@Composable
+private fun JournalRecordDetailSection(
+    sessions: List<SleepSessionEntity>,
+    expanded: Boolean,
+    selectedSessionId: Long?,
+    onToggle: () -> Unit,
+    onSelectSession: (Long) -> Unit
+) {
+    val selectedIndex = sessions.indexOfFirst { it.id == selectedSessionId }.let { if (it >= 0) it else 0 }
+    val selectedSession = sessions.getOrNull(selectedIndex)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (sessions.isEmpty()) {
+            GentleNoteCard()
+        } else {
+            Card(
+                modifier = Modifier
+                    .width(212.dp)
+                    .height(42.dp)
+                    .clickable(onClick = onToggle),
+                shape = RoundedCornerShape(13.dp),
+                colors = CardDefaults.cardColors(containerColor = Lavender.copy(alpha = .34f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+                border = BorderStroke(1.dp, Color(0xFFE3A958))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Rounded.MenuBook,
+                        contentDescription = null,
+                        tint = Ink,
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Spacer(Modifier.width(7.dp))
+                    Text("睡眠记录详情", color = Ink, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(8.dp))
+                    Text("${sessions.size}晚", color = Ink.copy(alpha = .62f), fontSize = 10.sp)
+                    Spacer(Modifier.weight(1f))
+                    Icon(
+                        if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = if (expanded) "收起睡眠详情" else "展开睡眠详情",
+                        tint = Ink,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+            }
+            AnimatedVisibility(expanded && selectedSession != null) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .offset(y = 9.dp)
+                            .background(Paper, RoundedCornerShape(3.dp))
+                            .border(
+                                BorderStroke(1.dp, Lavender.copy(alpha = .28f)),
+                                RoundedCornerShape(3.dp)
+                            )
+                    ) {
+                    }
+                    Card(
+                        modifier = Modifier.fillMaxWidth(.92f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = Paper.copy(alpha = .96f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 7.dp),
+                        border = BorderStroke(1.dp, Lavender.copy(alpha = .22f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
+                            JournalRecordNavigator(
+                                sessions = sessions,
+                                selectedIndex = selectedIndex,
+                                onSelectSession = onSelectSession
+                            )
+                            selectedSession?.let {
+                                JournalHistoryPaper(session = it, modifier = Modifier.fillMaxWidth())
+                            }
+                        }
                     }
                 }
             }
@@ -1063,13 +1816,74 @@ private fun JournalWeekStrip(sessions: List<SleepSessionEntity>) {
 }
 
 @Composable
-private fun JournalHistoryPaper(session: SleepSessionEntity) {
+private fun JournalRecordNavigator(
+    sessions: List<SleepSessionEntity>,
+    selectedIndex: Int,
+    onSelectSession: (Long) -> Unit
+) {
+    val visibleSessions = detailWindowSessions(sessions, selectedIndex)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        IconButton(
+            enabled = selectedIndex > 0,
+            onClick = { sessions.getOrNull(selectedIndex - 1)?.let { onSelectSession(it.id) } }
+        ) {
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = "上一晚", tint = Ink)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+            visibleSessions.forEach { session ->
+                val selected = session.id == sessions.getOrNull(selectedIndex)?.id
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (selected) Lavender else Paper)
+                        .border(
+                            BorderStroke(1.dp, if (selected) Lavender else Ink.copy(alpha = .10f)),
+                            RoundedCornerShape(12.dp)
+                        )
+                        .clickable { onSelectSession(session.id) }
+                        .padding(horizontal = 9.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = formatMonthDayChip(session.sessionDate),
+                        color = if (selected) Color.White else Ink,
+                        fontSize = 11.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
+            }
+        }
+        IconButton(
+            enabled = selectedIndex < sessions.lastIndex,
+            onClick = { sessions.getOrNull(selectedIndex + 1)?.let { onSelectSession(it.id) } }
+        ) {
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "下一晚", tint = Ink)
+        }
+    }
+}
+
+private fun detailWindowSessions(
+    sessions: List<SleepSessionEntity>,
+    selectedIndex: Int,
+    maxCount: Int = 3
+): List<SleepSessionEntity> {
+    if (sessions.size <= maxCount) return sessions
+    val safeIndex = selectedIndex.coerceIn(0, sessions.lastIndex)
+    val start = max(0, min(safeIndex - 1, sessions.size - maxCount))
+    return sessions.subList(start, start + maxCount)
+}
+
+@Composable
+private fun JournalHistoryPaper(session: SleepSessionEntity, modifier: Modifier = Modifier) {
     val mood = session.moodAfterWake ?: session.moodBeforeSleep
     val tag = session.tags().firstOrNull()
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .height(250.dp)
+            .height(184.dp)
     ) {
         Image(
             painter = painterResource(R.drawable.journal_history_paper),
@@ -1080,27 +1894,27 @@ private fun JournalHistoryPaper(session: SleepSessionEntity) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 48.dp, end = 28.dp, top = 32.dp, bottom = 26.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+                .padding(start = 40.dp, end = 22.dp, top = 22.dp, bottom = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            Text(formatJournalDate(session.sessionDate), color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text(formatJournalDate(session.sessionDate), color = Ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.NightsStay, contentDescription = null, tint = Ink, modifier = Modifier.size(19.dp))
-                Spacer(Modifier.width(7.dp))
+                Icon(Icons.Rounded.NightsStay, contentDescription = null, tint = Ink, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
                 Text(
                     "${formatTime(session.sleepCheckInAt)} → ${session.wakeCheckInAt?.let(::formatTime) ?: "未完成"}",
                     color = Ink,
-                    fontSize = 16.sp
+                    fontSize = 13.sp
                 )
             }
-            Text(formatDuration(session.restWindowMinutes), color = Ink, fontSize = 31.sp, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(formatDuration(session.restWindowMinutes), color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 mood?.let { JournalStamp(it, moodIcon(it), Lavender) }
                 tag?.let { JournalStamp(it, tagIcon(it), Sage) }
             }
             Spacer(Modifier.weight(1f))
             HorizontalDivider(color = Color(0xFFE8D9BE))
-            Text(historyUsageText(session), color = Ink.copy(alpha = .62f), fontSize = 11.sp, maxLines = 1)
+            Text(historyUsageText(session), color = Ink.copy(alpha = .62f), fontSize = 10.sp, maxLines = 1)
         }
     }
 }
@@ -1108,38 +1922,120 @@ private fun JournalHistoryPaper(session: SleepSessionEntity) {
 @Composable
 private fun JournalStamp(label: String, icon: ImageVector, color: Color) {
     Card(
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, color.copy(alpha = .9f)),
         colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .12f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, contentDescription = null, tint = Ink, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(5.dp))
-            Text(label, color = Ink, fontSize = 12.sp, maxLines = 1)
+            Icon(icon, contentDescription = null, tint = Ink, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(label, color = Ink, fontSize = 10.sp, maxLines = 1)
         }
     }
 }
 
-private fun averageBedtime(sessions: List<SleepSessionEntity>): String {
-    if (sessions.isEmpty()) return "—"
-    val shiftedMinutes = sessions.map { session ->
-        val time = Instant.ofEpochMilli(session.sleepCheckInAt)
-            .atZone(ZoneId.systemDefault())
-            .toLocalTime()
-        val minutes = time.hour * 60 + time.minute
-        if (time.hour < 12) minutes + 24 * 60 else minutes
+private fun buildJournalRangePoints(
+    sessions: List<SleepSessionEntity>,
+    settings: AppSettings,
+    range: JournalDateRange,
+    grouping: JournalGrouping
+): List<JournalWeekPoint> {
+    val start = minOf(range.start, range.endInclusive)
+    val endInclusive = maxOf(range.start, range.endInclusive)
+    val endExclusive = endInclusive.plusDays(1)
+    val datedSessions = sessions.mapNotNull { session ->
+        runCatching { LocalDate.parse(session.sessionDate) }.getOrNull()?.let { it to session }
     }
-    val average = shiftedMinutes.average().roundToInt() % (24 * 60)
-    return "%02d:%02d".format(average / 60, average % 60)
+    val periods = buildJournalPeriods(start, endExclusive, grouping)
+
+    return periods.map { (bucketStart, bucketEndExclusive) ->
+        val bucketSessions = datedSessions
+            .filter { (date, _) -> date >= bucketStart && date < bucketEndExclusive }
+            .map { it.second }
+        val averageSleepMinutes = bucketSessions
+            .mapNotNull { it.restWindowMinutes?.toInt() }
+            .takeIf { it.isNotEmpty() }
+            ?.average()
+            ?.roundToInt()
+        val averageDeviationMinutes = bucketSessions
+            .mapNotNull { bedtimeDeviationMinutes(it, settings) }
+            .takeIf { it.isNotEmpty() }
+            ?.average()
+            ?.roundToInt()
+        JournalWeekPoint(bucketStart, averageSleepMinutes, averageDeviationMinutes)
+    }
 }
 
-private fun formatCompactDuration(minutes: Double): String {
-    val rounded = minutes.roundToInt().coerceAtLeast(0)
-    return "${rounded / 60}时${rounded % 60}分"
+private fun buildJournalPeriods(
+    start: LocalDate,
+    endExclusive: LocalDate,
+    grouping: JournalGrouping
+): List<Pair<LocalDate, LocalDate>> {
+    val periods = mutableListOf<Pair<LocalDate, LocalDate>>()
+    var cursor = start
+    while (cursor < endExclusive) {
+        val next = when (grouping) {
+            JournalGrouping.DAY -> cursor.plusDays(1)
+            JournalGrouping.WEEK -> cursor.plusDays(7)
+            JournalGrouping.MONTH -> YearMonth.from(cursor).plusMonths(1).atDay(1)
+        }.coerceAtMost(endExclusive)
+        periods += cursor to next
+        cursor = next
+    }
+    return periods.ifEmpty { listOf(start to endExclusive) }
 }
+
+private fun countSessionsInRange(
+    sessions: List<SleepSessionEntity>,
+    range: JournalDateRange
+): Int {
+    val start = minOf(range.start, range.endInclusive)
+    val endInclusive = maxOf(range.start, range.endInclusive)
+    return sessions.count { session ->
+        runCatching { LocalDate.parse(session.sessionDate) }
+            .getOrNull()
+            ?.let { it >= start && it <= endInclusive }
+            ?: false
+    }
+}
+
+private fun formatRangeDate(date: LocalDate): String =
+    "${date.monthValue}月${date.dayOfMonth}日"
+
+private fun journalAxisLabel(date: LocalDate, grouping: JournalGrouping): String = when (grouping) {
+    JournalGrouping.MONTH -> "${date.monthValue}月"
+    JournalGrouping.DAY,
+    JournalGrouping.WEEK -> "${date.monthValue}/${date.dayOfMonth}"
+}
+
+private fun bedtimeDeviationMinutes(
+    session: SleepSessionEntity,
+    settings: AppSettings
+): Int? {
+    val plannedHour = session.plannedBedtimeHour ?: settings.bedtimeHour
+    val plannedMinute = session.plannedBedtimeMinute ?: settings.bedtimeMinute
+    val actualTime = Instant.ofEpochMilli(session.sleepCheckInAt)
+        .atZone(ZoneId.systemDefault())
+        .toLocalTime()
+    var difference = actualTime.hour * 60 + actualTime.minute - (plannedHour * 60 + plannedMinute)
+    if (difference <= -12 * 60) difference += 24 * 60
+    if (difference > 12 * 60) difference -= 24 * 60
+    return difference
+}
+
+private fun formatDeviationLabel(deviationMinutes: Int): String {
+    val absValue = abs(deviationMinutes)
+    val prefix = if (deviationMinutes >= 0) "晚" else "早"
+    return "$prefix${absValue / 60}:${(absValue % 60).toString().padStart(2, '0')}"
+}
+
+private fun formatMonthDayChip(date: String): String = runCatching {
+    val parsed = LocalDate.parse(date)
+    "${parsed.monthValue}/${parsed.dayOfMonth}"
+}.getOrDefault(date)
 
 private fun formatClockDuration(minutes: Long): String =
     "${minutes / 60}:${(minutes % 60).toString().padStart(2, '0')}"
@@ -1166,9 +2062,9 @@ private fun tagIcon(label: String): ImageVector = bedtimeTagOptions.firstOrNull 
     ?: Icons.Rounded.MenuBook
 
 private fun historyUsageText(session: SleepSessionEntity): String = when (session.usageDataAvailable) {
-    true -> "夜间解锁 ${session.nightUnlockCount ?: 0} 次 · 睡前使用 ${session.preSleepPhoneMinutes ?: 0} 分钟"
-    false -> "手机使用数据不可用"
-    null -> "手机使用数据未记录"
+    true -> "夜间解锁 ${session.nightUnlockCount ?: 0} 次 · 本机睡前使用 ${session.preSleepPhoneMinutes ?: 0} 分钟"
+    false -> "本机使用数据不可用"
+    null -> "本机使用数据未记录"
 }
 
 @Composable

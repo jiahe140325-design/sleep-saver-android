@@ -17,6 +17,10 @@ data class SleepSessionEntity(
     val sessionDate: String,
     val sleepCheckInAt: Long,
     val wakeCheckInAt: Long? = null,
+    val plannedBedtimeHour: Int? = null,
+    val plannedBedtimeMinute: Int? = null,
+    val plannedWakeHour: Int? = null,
+    val plannedWakeMinute: Int? = null,
     val preSleepPhoneMinutes: Int? = null,
     val postCheckInPhoneMinutes: Int? = null,
     val nightUnlockCount: Int? = null,
@@ -53,4 +57,3 @@ enum class StartSessionResult {
     CREATED,
     ALREADY_ACTIVE
 }
-

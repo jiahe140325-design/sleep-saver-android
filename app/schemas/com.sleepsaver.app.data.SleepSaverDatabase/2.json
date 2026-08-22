@@ -1,0 +1,159 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "6fb1df62c4e1977761c8348244b2f8e1",
+    "entities": [
+      {
+        "tableName": "sleep_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionDate` TEXT NOT NULL, `sleepCheckInAt` INTEGER NOT NULL, `wakeCheckInAt` INTEGER, `plannedBedtimeHour` INTEGER, `plannedBedtimeMinute` INTEGER, `plannedWakeHour` INTEGER, `plannedWakeMinute` INTEGER, `preSleepPhoneMinutes` INTEGER, `postCheckInPhoneMinutes` INTEGER, `nightUnlockCount` INTEGER, `nightPhoneMinutes` INTEGER, `moodBeforeSleep` TEXT, `moodAfterWake` TEXT, `tagsJson` TEXT NOT NULL, `isSleepCheckInManual` INTEGER NOT NULL, `isWakeCheckInManual` INTEGER NOT NULL, `isSupplemented` INTEGER NOT NULL, `usageDataAvailable` INTEGER, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionDate",
+            "columnName": "sessionDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sleepCheckInAt",
+            "columnName": "sleepCheckInAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wakeCheckInAt",
+            "columnName": "wakeCheckInAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "plannedBedtimeHour",
+            "columnName": "plannedBedtimeHour",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "plannedBedtimeMinute",
+            "columnName": "plannedBedtimeMinute",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "plannedWakeHour",
+            "columnName": "plannedWakeHour",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "plannedWakeMinute",
+            "columnName": "plannedWakeMinute",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "preSleepPhoneMinutes",
+            "columnName": "preSleepPhoneMinutes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "postCheckInPhoneMinutes",
+            "columnName": "postCheckInPhoneMinutes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "nightUnlockCount",
+            "columnName": "nightUnlockCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "nightPhoneMinutes",
+            "columnName": "nightPhoneMinutes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "moodBeforeSleep",
+            "columnName": "moodBeforeSleep",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "moodAfterWake",
+            "columnName": "moodAfterWake",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "tagsJson",
+            "columnName": "tagsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isSleepCheckInManual",
+            "columnName": "isSleepCheckInManual",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isWakeCheckInManual",
+            "columnName": "isWakeCheckInManual",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isSupplemented",
+            "columnName": "isSupplemented",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "usageDataAvailable",
+            "columnName": "usageDataAvailable",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sleep_sessions_sessionDate",
+            "unique": false,
+            "columnNames": [
+              "sessionDate"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sleep_sessions_sessionDate` ON `${TABLE_NAME}` (`sessionDate`)"
+          },
+          {
+            "name": "index_sleep_sessions_wakeCheckInAt",
+            "unique": false,
+            "columnNames": [
+              "wakeCheckInAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sleep_sessions_wakeCheckInAt` ON `${TABLE_NAME}` (`wakeCheckInAt`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6fb1df62c4e1977761c8348244b2f8e1')"
+    ]
+  }
+}
