@@ -3,6 +3,7 @@ package com.sleepsaver.app
 import android.app.Application
 import androidx.room.Room
 import com.sleepsaver.app.data.MIGRATION_1_2
+import com.sleepsaver.app.data.MIGRATION_2_3
 import com.sleepsaver.app.data.SettingsRepository
 import com.sleepsaver.app.data.SleepRepository
 import com.sleepsaver.app.data.SleepSaverDatabase
@@ -17,7 +18,7 @@ class AppContainer(application: Application) {
         application,
         SleepSaverDatabase::class.java,
         "sleep-saver.db"
-    ).addMigrations(MIGRATION_1_2).build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
 
     val sleepRepository = SleepRepository(database.sleepSessionDao())
     val settingsRepository = SettingsRepository(application)

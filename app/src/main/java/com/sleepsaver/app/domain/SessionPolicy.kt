@@ -22,7 +22,7 @@ object SessionPolicy {
         now: Long,
         undoWindowMillis: Long = UNDO_WINDOW_MILLIS
     ): Boolean = activeSession != null &&
-        now >= activeSession.sleepCheckInAt &&
-        now - activeSession.sleepCheckInAt <= undoWindowMillis
+        now >= (activeSession.originalSleepCheckInAt ?: activeSession.createdAt) &&
+        now - (activeSession.originalSleepCheckInAt ?: activeSession.createdAt) <= undoWindowMillis
 }
 

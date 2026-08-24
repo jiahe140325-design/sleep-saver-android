@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sleepsaver.app.SleepSaverApplication
 import com.sleepsaver.app.data.AppSettings
+import com.sleepsaver.app.data.SessionEditResult
 import com.sleepsaver.app.data.SleepSessionEntity
 import com.sleepsaver.app.data.StartSessionResult
 import com.sleepsaver.app.export.DataExporter
@@ -77,32 +78,119 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         usageGranted.value = UsageAccess.isGranted(getApplication())
     }
 
-    fun startSleep(mood: String?, tags: List<String>) {
+    fun startSleep(
+        mood: String?,
+        tags: List<String>,
+        effectiveSleepAt: Long,
+        sleepWasAdjusted: Boolean
+    ) {
         val settings = uiState.value.settings
+        val recordedAt = System.currentTimeMillis()
         viewModelScope.launch {
             busy.value = true
-            when (sleepRepository.startSession(mood, tags, settings)) {
+            when (
+                sleepRepository.startSession(
+                    moodBeforeSleep = mood,
+                    tags = tags,
+                    settings = settings,
+                    effectiveSleepAt = effectiveSleepAt,
+                    timeWasAdjusted = sleepWasAdjusted,
+                    recordedAt = recordedAt
+                )
+            ) {
                 StartSessionResult.CREATED -> _messages.emit("睡前打卡完成，今晚开始记录")
                 StartSessionResult.ALREADY_ACTIVE -> _messages.emit("今晚已经开始记录，请勿重复打卡")
+                StartSessionResult.INVALID_TIME -> _messages.emit("记录时间不能晚于当前时间")
             }
             busy.value = false
         }
     }
 
-    fun finishWake(mood: String?) {
+    fun finishWake(
+        mood: String?,
+        effectiveSleepAt: Long,
+        effectiveWakeAt: Long,
+        sleepWasAdjusted: Boolean,
+        wakeWasAdjusted: Boolean
+    ) {
         val active = uiState.value.activeSession
         if (active == null) {
             _messages.tryEmit("请先完成睡前打卡")
             return
         }
+        val recordedAt = System.currentTimeMillis()
+        if (!timeRangeLooksValid(effectiveSleepAt, effectiveWakeAt, recordedAt)) return
         viewModelScope.launch {
             busy.value = true
-            val now = System.currentTimeMillis()
-            val usage = withContext(Dispatchers.IO) {
-                usageAnalyzer.analyze(active.sleepCheckInAt, now)
-            }
-            val completed = sleepRepository.finishSession(mood, usage, now)
-            _messages.emit(if (completed) "早起打卡完成，昨晚记录已保存" else "没有找到正在进行的记录")
+            val usage = analyzeUsage(effectiveSleepAt, effectiveWakeAt)
+            val result = sleepRepository.finishSession(
+                moodAfterWake = mood,
+                usageSummary = usage,
+                effectiveSleepAt = effectiveSleepAt,
+                effectiveWakeAt = effectiveWakeAt,
+                sleepWasAdjusted = sleepWasAdjusted,
+                wakeWasAdjusted = wakeWasAdjusted,
+                recordedAt = recordedAt
+            )
+            emitEditResult(result, "早起打卡完成，昨晚记录已保存")
+            busy.value = false
+        }
+    }
+
+    fun supplementSession(sleepAt: Long, wakeAt: Long) {
+        val recordedAt = System.currentTimeMillis()
+        if (!timeRangeLooksValid(sleepAt, wakeAt, recordedAt)) return
+        val settings = uiState.value.settings
+        viewModelScope.launch {
+            busy.value = true
+            val result = sleepRepository.supplementSession(
+                sleepAt = sleepAt,
+                wakeAt = wakeAt,
+                settings = settings,
+                usageSummary = analyzeUsage(sleepAt, wakeAt),
+                recordedAt = recordedAt
+            )
+            emitEditResult(result, "昨晚已经补记，统计和趋势已重新计算")
+            busy.value = false
+        }
+    }
+
+    fun correctSession(id: Long, sleepAt: Long, wakeAt: Long) {
+        val correctedAt = System.currentTimeMillis()
+        if (!timeRangeLooksValid(sleepAt, wakeAt, correctedAt)) return
+        viewModelScope.launch {
+            busy.value = true
+            val result = sleepRepository.correctSession(
+                id = id,
+                sleepAt = sleepAt,
+                wakeAt = wakeAt,
+                usageSummary = analyzeUsage(sleepAt, wakeAt),
+                correctedAt = correctedAt
+            )
+            emitEditResult(result, "时间已调整，统计和趋势已重新计算")
+            busy.value = false
+        }
+    }
+
+    fun restoreOriginalSession(id: Long) {
+        val session = uiState.value.sessions.firstOrNull { it.id == id }
+        if (session == null) {
+            _messages.tryEmit("没有找到这条记录")
+            return
+        }
+        val sleepAt = session.originalSleepCheckInAt ?: session.sleepCheckInAt
+        val wakeAt = session.originalWakeCheckInAt ?: session.wakeCheckInAt
+        if (wakeAt == null) {
+            _messages.tryEmit("这条记录还没有完成")
+            return
+        }
+        viewModelScope.launch {
+            busy.value = true
+            val result = sleepRepository.restoreOriginalSession(
+                id = id,
+                usageSummary = analyzeUsage(sleepAt, wakeAt)
+            )
+            emitEditResult(result, "已恢复最初打卡时间")
             busy.value = false
         }
     }
@@ -143,5 +231,31 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun csvExport(): String = withContext(Dispatchers.IO) {
         DataExporter.toCsv(sleepRepository.allSessionsOnce())
+    }
+
+    private suspend fun analyzeUsage(sleepAt: Long, wakeAt: Long) = withContext(Dispatchers.IO) {
+        usageAnalyzer.analyze(sleepAt, wakeAt)
+    }
+
+    private fun timeRangeLooksValid(sleepAt: Long, wakeAt: Long, now: Long): Boolean {
+        val message = when {
+            wakeAt <= sleepAt -> "起床时间必须晚于睡前时间"
+            sleepAt > now || wakeAt > now -> "不能选择未来时间"
+            else -> null
+        }
+        message?.let(_messages::tryEmit)
+        return message == null
+    }
+
+    private suspend fun emitEditResult(result: SessionEditResult, successMessage: String) {
+        _messages.emit(
+            when (result) {
+                SessionEditResult.SAVED -> successMessage
+                SessionEditResult.NOT_FOUND -> "没有找到需要修改的记录"
+                SessionEditResult.INVALID_ORDER -> "起床时间必须晚于睡前时间"
+                SessionEditResult.FUTURE_TIME -> "不能选择未来时间"
+                SessionEditResult.OVERLAP -> "这个时间段与已有睡眠记录重叠"
+            }
+        )
     }
 }
