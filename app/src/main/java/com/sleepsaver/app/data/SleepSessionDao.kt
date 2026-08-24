@@ -21,6 +21,9 @@ interface SleepSessionDao {
     @Query("SELECT * FROM sleep_sessions ORDER BY sleepCheckInAt DESC")
     suspend fun getAllOnce(): List<SleepSessionEntity>
 
+    @Query("SELECT * FROM sleep_sessions WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): SleepSessionEntity?
+
     @Insert
     suspend fun insert(session: SleepSessionEntity): Long
 

@@ -6,7 +6,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 object PersistencePolicy {
-    const val DATABASE_VERSION = 2
+    const val DATABASE_VERSION = 3
     const val ALLOW_DESTRUCTIVE_MIGRATION = false
     const val AUTO_BACKUP_ENABLED = false
 }
@@ -17,6 +17,14 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         database.execSQL("ALTER TABLE sleep_sessions ADD COLUMN plannedBedtimeMinute INTEGER")
         database.execSQL("ALTER TABLE sleep_sessions ADD COLUMN plannedWakeHour INTEGER")
         database.execSQL("ALTER TABLE sleep_sessions ADD COLUMN plannedWakeMinute INTEGER")
+    }
+}
+
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE sleep_sessions ADD COLUMN originalSleepCheckInAt INTEGER")
+        database.execSQL("ALTER TABLE sleep_sessions ADD COLUMN originalWakeCheckInAt INTEGER")
+        database.execSQL("ALTER TABLE sleep_sessions ADD COLUMN correctedAt INTEGER")
     }
 }
 

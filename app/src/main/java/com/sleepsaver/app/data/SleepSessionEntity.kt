@@ -21,6 +21,9 @@ data class SleepSessionEntity(
     val plannedBedtimeMinute: Int? = null,
     val plannedWakeHour: Int? = null,
     val plannedWakeMinute: Int? = null,
+    val originalSleepCheckInAt: Long? = null,
+    val originalWakeCheckInAt: Long? = null,
+    val correctedAt: Long? = null,
     val preSleepPhoneMinutes: Int? = null,
     val postCheckInPhoneMinutes: Int? = null,
     val nightUnlockCount: Int? = null,
@@ -36,6 +39,8 @@ data class SleepSessionEntity(
     val updatedAt: Long
 ) {
     val isActive: Boolean get() = wakeCheckInAt == null
+    val wasCorrected: Boolean
+        get() = originalSleepCheckInAt != null || originalWakeCheckInAt != null
     val restWindowMinutes: Long?
         get() = wakeCheckInAt?.let { ((it - sleepCheckInAt).coerceAtLeast(0L)) / 60_000L }
 
@@ -55,5 +60,14 @@ data class SleepSessionEntity(
 
 enum class StartSessionResult {
     CREATED,
-    ALREADY_ACTIVE
+    ALREADY_ACTIVE,
+    INVALID_TIME
+}
+
+enum class SessionEditResult {
+    SAVED,
+    NOT_FOUND,
+    INVALID_ORDER,
+    FUTURE_TIME,
+    OVERLAP
 }

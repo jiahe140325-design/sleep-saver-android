@@ -1,7 +1,6 @@
 package com.sleepsaver.app.ui
 
 import android.Manifest
-import android.app.AlertDialog
 import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
@@ -31,6 +30,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
@@ -51,6 +52,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Coffee
 import androidx.compose.material.icons.rounded.DirectionsRun
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -68,6 +70,7 @@ import androidx.compose.material.icons.rounded.SentimentVerySatisfied
 import androidx.compose.material.icons.rounded.Spa
 import androidx.compose.material.icons.rounded.Work
 import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -84,6 +87,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -94,6 +98,7 @@ import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -111,6 +116,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -119,6 +125,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sleepsaver.app.R
 import com.sleepsaver.app.data.AppSettings
 import com.sleepsaver.app.data.SleepSessionEntity
+import com.sleepsaver.app.domain.CheckInPhase
+import com.sleepsaver.app.domain.CheckInPhasePolicy
+import com.sleepsaver.app.domain.PlannedSleepWindow
 import com.sleepsaver.app.domain.SessionPolicy
 import com.sleepsaver.app.ui.theme.Blush
 import com.sleepsaver.app.ui.theme.Cream
@@ -136,6 +145,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private enum class AppTab(val title: String, val icon: ImageVector) {
@@ -194,6 +204,54 @@ private data class JournalDateRange(
         }
     }
 }
+
+internal data class SessionClockInput(
+    val date: LocalDate,
+    val hourText: String,
+    val minuteText: String
+)
+
+internal fun sessionClockInput(
+    timestamp: Long,
+    zoneId: ZoneId = ZoneId.systemDefault()
+): SessionClockInput {
+    val value = Instant.ofEpochMilli(timestamp).atZone(zoneId)
+    return SessionClockInput(
+        date = value.toLocalDate(),
+        hourText = value.hour.toString().padStart(2, '0'),
+        minuteText = value.minute.toString().padStart(2, '0')
+    )
+}
+
+internal fun sessionClockTimestamp(
+    input: SessionClockInput,
+    zoneId: ZoneId = ZoneId.systemDefault()
+): Long? {
+    val hour = input.hourText.toIntOrNull()?.takeIf { it in 0..23 } ?: return null
+    val minute = input.minuteText.toIntOrNull()?.takeIf { it in 0..59 } ?: return null
+    return input.date
+        .atTime(hour, minute)
+        .atZone(zoneId)
+        .toInstant()
+        .toEpochMilli()
+}
+
+internal fun adjustSessionClock(
+    input: SessionClockInput,
+    minutes: Long,
+    zoneId: ZoneId = ZoneId.systemDefault()
+): SessionClockInput {
+    val timestamp = sessionClockTimestamp(input, zoneId) ?: return input
+    val adjusted = Instant.ofEpochMilli(timestamp).atZone(zoneId).plusMinutes(minutes)
+    return SessionClockInput(
+        date = adjusted.toLocalDate(),
+        hourText = adjusted.hour.toString().padStart(2, '0'),
+        minuteText = adjusted.minute.toString().padStart(2, '0')
+    )
+}
+
+internal fun sessionNeedsCorrectionAttention(session: SleepSessionEntity): Boolean =
+    session.restWindowMinutes?.let { it !in 60L..(16L * 60L) } == true
 
 private val journalDurationTapeResources = listOf(
     R.drawable.journal_duration_tape_1,
@@ -267,6 +325,7 @@ private fun TodayScreen(
     val scope = rememberCoroutineScope()
 
     var enableReminderAfterPermission by remember { mutableStateOf(false) }
+    var editingLatestId by remember { mutableStateOf<Long?>(null) }
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -285,6 +344,15 @@ private fun TodayScreen(
             item { UsagePermissionCard { openUsageAccessSettings(context) } }
         }
         item { TodayTimelineCard(state.activeSession, state.latestCompleted) }
+        if (state.activeSession == null) {
+            state.latestCompleted?.let { latest ->
+                item {
+                    TodayCorrectionEntry(latest) {
+                        editingLatestId = latest.id
+                    }
+                }
+            }
+        }
         item { CompactWeekProgressTicket(state) }
         item { TodayBlushMemo() }
         item {
@@ -306,6 +374,30 @@ private fun TodayScreen(
                     } else {
                         viewModel.setReminderEnabled(true)
                     }
+                }
+            )
+        }
+    }
+
+    state.completedSessions.firstOrNull { it.id == editingLatestId }?.let { session ->
+        session.wakeCheckInAt?.let { wakeAt ->
+            SessionTimeEditorDialog(
+                title = "纠正昨晚记录",
+                description = "直接改数字，不再连续打开日期盘和钟表盘。保存后会立即重算今日与手帐统计。",
+                initialSleepAt = session.sleepCheckInAt,
+                initialWakeAt = wakeAt,
+                onDismiss = { editingLatestId = null },
+                onConfirm = { selectedSleepAt, selectedWakeAt ->
+                    viewModel.correctSession(session.id, selectedSleepAt, selectedWakeAt)
+                    editingLatestId = null
+                },
+                onRestore = if (session.wasCorrected) {
+                    {
+                        viewModel.restoreOriginalSession(session.id)
+                        editingLatestId = null
+                    }
+                } else {
+                    null
                 }
             )
         }
@@ -465,6 +557,44 @@ private fun TodayTimelineCard(active: SleepSessionEntity?, latest: SleepSessionE
                     value = unlockValue
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun TodayCorrectionEntry(session: SleepSessionEntity, onClick: () -> Unit) {
+    val needsAttention = sessionNeedsCorrectionAttention(session)
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (needsAttention) Blush.copy(alpha = .46f) else Paper
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (needsAttention) Blush else Lavender.copy(alpha = .68f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.Edit, contentDescription = null, tint = Ink, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (needsAttention) "这条记录可能有误" else "昨晚时间不对？",
+                    color = Ink,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text("睡前、起床时间都可以纠正", color = Ink.copy(alpha = .62f), fontSize = 10.sp)
+            }
+            Text(if (needsAttention) "立即纠正" else "纠正记录", color = Lavender, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -664,74 +794,564 @@ private fun ExportCard(onJson: () -> Unit, onCsv: () -> Unit) {
 @Composable
 private fun CheckInScreen(state: AppUiState, viewModel: AppViewModel) {
     val context = LocalContext.current
-    var mood by remember(state.activeSession?.id) { mutableStateOf<String?>(null) }
-    var selectedTags by remember(state.activeSession?.id) { mutableStateOf(setOf<String>()) }
-    val isBedtime = state.activeSession == null
+    val now = rememberMinuteClock()
+    val phase = CheckInPhasePolicy.phase(
+        activeSession = state.activeSession,
+        completedSessions = state.completedSessions,
+        settings = state.settings,
+        now = now
+    )
+    val plannedWindow = CheckInPhasePolicy.windowAt(now, state.settings)
+    val previousWindow = CheckInPhasePolicy.previousWindowAt(now, state.settings)
+    val previousMissing = phase == CheckInPhase.BEDTIME &&
+        CheckInPhasePolicy.hasPreviousMissing(state.completedSessions, state.settings, now)
+
+    var mood by remember(phase, state.activeSession?.id) { mutableStateOf<String?>(null) }
+    var selectedTags by remember(phase, state.activeSession?.id) { mutableStateOf(setOf<String>()) }
+    var sleepAt by remember(phase, state.activeSession?.id, plannedWindow.bedtimeAt) {
+        mutableLongStateOf(
+            when (phase) {
+                CheckInPhase.WAKE -> state.activeSession?.sleepCheckInAt ?: now
+                CheckInPhase.MISSING_PREVIOUS -> plannedWindow.bedtimeAt
+                else -> now
+            }
+        )
+    }
+    var wakeAt by remember(phase, state.activeSession?.id, plannedWindow.wakeAt) {
+        mutableLongStateOf(
+            when (phase) {
+                CheckInPhase.MISSING_PREVIOUS -> plannedWindow.wakeAt.coerceAtMost(now)
+                else -> now
+            }
+        )
+    }
+    var sleepAdjusted by remember(phase, state.activeSession?.id) { mutableStateOf(false) }
+    var wakeAdjusted by remember(phase, state.activeSession?.id) { mutableStateOf(false) }
+    var supplementWindow by remember { mutableStateOf<PlannedSleepWindow?>(null) }
+    var editingCompletedId by remember { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(now, phase, sleepAdjusted, wakeAdjusted) {
+        if (phase == CheckInPhase.BEDTIME && !sleepAdjusted) sleepAt = now
+        if (phase == CheckInPhase.WAKE && !wakeAdjusted) wakeAt = now
+    }
+
+    val title = when (phase) {
+        CheckInPhase.BEDTIME -> "睡前打卡"
+        CheckInPhase.WAKE -> "早起打卡"
+        CheckInPhase.MISSING_PREVIOUS -> "昨晚漏记"
+        CheckInPhase.DAY_COMPLETE -> "昨晚已记录"
+    }
+    val subtitle = when (phase) {
+        CheckInPhase.BEDTIME -> "告诉自己：今天到这里就好"
+        CheckInPhase.WAKE -> "慢慢醒来，记录真实的感觉"
+        CheckInPhase.MISSING_PREVIOUS -> "补上真实时间，这一页就完整了"
+        CheckInPhase.DAY_COMPLETE -> "今天的数据已经收好，今晚再见"
+    }
+    val heroNote = when (phase) {
+        CheckInPhase.BEDTIME -> "把今天的小事\n都放心放下吧"
+        CheckInPhase.WAKE -> "新的一天醒来了\n先听听身体的感觉"
+        CheckInPhase.MISSING_PREVIOUS -> "昨晚好像漏记了一页\n想起来时再补上就好"
+        CheckInPhase.DAY_COMPLETE -> "昨晚已经好好记下\n今天不用重复打卡"
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item {
-            ScreenTitle(
-                if (isBedtime) "睡前打卡" else "早起打卡",
-                if (isBedtime) "告诉自己：今天到这里就好" else "慢慢醒来，记录真实的感觉"
-            )
-        }
-        item {
-            CheckInJournalHero(
-                note = if (isBedtime) "把今天的小事\n都放心放下吧" else "新的一天醒来了\n先听听身体的感觉"
-            )
-        }
-        if (!state.usagePermissionGranted) {
+        item { ScreenTitle(title, subtitle) }
+        item { CheckInJournalHero(note = heroNote) }
+        if (!state.usagePermissionGranted && phase != CheckInPhase.DAY_COMPLETE) {
             item { UsagePermissionCard { openUsageAccessSettings(context) } }
         }
-        if (isBedtime) {
-            item {
-                CheckInJournalSheet(
-                    mood = mood,
-                    onMoodSelected = { mood = it },
-                    selectedTags = selectedTags,
-                    onTagSelected = { label ->
-                        selectedTags = if (label in selectedTags) selectedTags - label else selectedTags + label
+        when (phase) {
+            CheckInPhase.BEDTIME -> {
+                if (previousMissing) {
+                    item {
+                        PreviousMissingCard {
+                            supplementWindow = previousWindow
+                        }
                     }
-                )
-            }
-            item {
-                PrimaryCheckInButton(
-                    text = "我要睡了 · 开始记录",
-                    icon = Icons.Rounded.NightsStay,
-                    enabled = !state.busy,
-                    onClick = { viewModel.startSleep(mood, selectedTags.toList()) }
-                )
-            }
-        } else {
-            item { ActiveSessionCard(state.activeSession) }
-            item {
-                MoodChoiceCard(
-                    title = "醒来感觉怎么样？",
-                    mood = mood,
-                    onMoodSelected = { mood = it }
-                )
-            }
-            item {
-                PrimaryCheckInButton(
-                    text = "完成早起打卡",
-                    icon = Icons.Rounded.CheckCircle,
-                    enabled = !state.busy,
-                    onClick = { viewModel.finishWake(mood) }
-                )
-            }
-            if (SessionPolicy.canUndo(state.activeSession, System.currentTimeMillis())) {
+                }
                 item {
-                    OutlinedButton(onClick = viewModel::undoSleepCheckIn, modifier = Modifier.fillMaxWidth()) {
-                        Text("手滑了，撤销睡前打卡（5 分钟内）")
+                    CheckInJournalSheet(
+                        mood = mood,
+                        onMoodSelected = { mood = it },
+                        selectedTags = selectedTags,
+                        onTagSelected = { label ->
+                            selectedTags = if (label in selectedTags) selectedTags - label else selectedTags + label
+                        }
+                    )
+                }
+                item {
+                    CheckInTimeAdjustCard(
+                        sleepAt = sleepAt,
+                        wakeAt = null,
+                        onSleepChange = {
+                            showDateTimePicker(context, sleepAt, now) {
+                                sleepAt = it
+                                sleepAdjusted = true
+                            }
+                        }
+                    )
+                }
+                item {
+                    PrimaryCheckInButton(
+                        text = "我要睡了 · 开始记录",
+                        icon = Icons.Rounded.NightsStay,
+                        enabled = !state.busy,
+                        onClick = {
+                            viewModel.startSleep(mood, selectedTags.toList(), sleepAt, sleepAdjusted)
+                        }
+                    )
+                }
+            }
+
+            CheckInPhase.WAKE -> {
+                state.activeSession?.let { session ->
+                    item { ActiveSessionCard(session) }
+                    item {
+                        CheckInTimeAdjustCard(
+                            sleepAt = sleepAt,
+                            wakeAt = wakeAt,
+                            onSleepChange = {
+                                showDateTimePicker(context, sleepAt, now) {
+                                    sleepAt = it
+                                    sleepAdjusted = true
+                                }
+                            },
+                            onWakeChange = {
+                                showDateTimePicker(context, wakeAt, now) {
+                                    wakeAt = it
+                                    wakeAdjusted = true
+                                }
+                            }
+                        )
+                    }
+                    item {
+                        MoodChoiceCard(
+                            title = "醒来感觉怎么样？",
+                            mood = mood,
+                            onMoodSelected = { mood = it }
+                        )
+                    }
+                    item {
+                        PrimaryCheckInButton(
+                            text = "完成早起打卡",
+                            icon = Icons.Rounded.CheckCircle,
+                            enabled = !state.busy,
+                            onClick = {
+                                viewModel.finishWake(
+                                    mood,
+                                    sleepAt,
+                                    wakeAt,
+                                    sleepAdjusted,
+                                    wakeAdjusted
+                                )
+                            }
+                        )
+                    }
+                    if (SessionPolicy.canUndo(session, now)) {
+                        item {
+                            OutlinedButton(
+                                onClick = viewModel::undoSleepCheckIn,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("手滑了，撤销睡前打卡（5 分钟内）")
+                            }
+                        }
+                    }
+                }
+            }
+
+            CheckInPhase.MISSING_PREVIOUS -> {
+                item {
+                    MissingSessionCard {
+                        supplementWindow = plannedWindow
+                    }
+                }
+            }
+
+            CheckInPhase.DAY_COMPLETE -> {
+                item {
+                    DayCompleteCard(state.latestCompleted) {
+                        editingCompletedId = state.latestCompleted?.id
                     }
                 }
             }
         }
     }
+
+    supplementWindow?.let { window ->
+        SessionTimeEditorDialog(
+            title = "补记昨晚",
+            description = "APP 不会自动猜测你的睡眠时间，请按实际情况确认。",
+            initialSleepAt = window.bedtimeAt,
+            initialWakeAt = window.wakeAt.coerceAtMost(now),
+            onDismiss = { supplementWindow = null },
+            onConfirm = { selectedSleepAt, selectedWakeAt ->
+                viewModel.supplementSession(selectedSleepAt, selectedWakeAt)
+                supplementWindow = null
+            }
+        )
+    }
+
+    state.completedSessions.firstOrNull { it.id == editingCompletedId }?.let { session ->
+        session.wakeCheckInAt?.let { wakeAt ->
+            SessionTimeEditorDialog(
+                title = "纠正昨晚记录",
+                description = "直接改数字，保存后会重新计算时长和手帐趋势。",
+                initialSleepAt = session.sleepCheckInAt,
+                initialWakeAt = wakeAt,
+                onDismiss = { editingCompletedId = null },
+                onConfirm = { selectedSleepAt, selectedWakeAt ->
+                    viewModel.correctSession(session.id, selectedSleepAt, selectedWakeAt)
+                    editingCompletedId = null
+                },
+                onRestore = if (session.wasCorrected) {
+                    {
+                        viewModel.restoreOriginalSession(session.id)
+                        editingCompletedId = null
+                    }
+                } else {
+                    null
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun rememberMinuteClock(): Long {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000)
+            now = System.currentTimeMillis()
+        }
+    }
+    return now
+}
+
+@Composable
+private fun CheckInTimeAdjustCard(
+    sleepAt: Long,
+    wakeAt: Long?,
+    onSleepChange: () -> Unit,
+    onWakeChange: (() -> Unit)? = null
+) {
+    Card(
+        shape = cardShape,
+        colors = CardDefaults.cardColors(containerColor = Lavender.copy(alpha = .22f)),
+        border = BorderStroke(1.dp, Lavender.copy(alpha = .65f))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("本次记录时间", color = Ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            DateTimeEditRow("准备休息", sleepAt, onSleepChange)
+            if (wakeAt != null && onWakeChange != null) {
+                HorizontalDivider(color = Lavender.copy(alpha = .35f))
+                DateTimeEditRow("实际起床", wakeAt, onWakeChange)
+                Text(
+                    "预计记录 ${formatDuration(((wakeAt - sleepAt).coerceAtLeast(0L)) / 60_000L)}",
+                    color = Ink.copy(alpha = .62f),
+                    fontSize = 11.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DateTimeEditRow(label: String, timestamp: Long, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Rounded.AccessTime, contentDescription = null, tint = Ink, modifier = Modifier.size(19.dp))
+        Spacer(Modifier.width(9.dp))
+        Column(Modifier.weight(1f)) {
+            Text(label, color = Ink.copy(alpha = .62f), fontSize = 11.sp)
+            Text(formatDateTime(timestamp), color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        }
+        Icon(Icons.Rounded.Edit, contentDescription = "调整${label}", tint = Lavender, modifier = Modifier.size(18.dp))
+    }
+}
+
+@Composable
+private fun MissingSessionCard(onSupplement: () -> Unit) {
+    Card(
+        shape = cardShape,
+        colors = CardDefaults.cardColors(containerColor = Blush.copy(alpha = .42f)),
+        border = BorderStroke(1.dp, Blush)
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("昨晚好像漏记了一页", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "补上实际准备休息和起床时间后，睡眠时长、偏离计划和手帐趋势会一起更新。",
+                color = Ink.copy(alpha = .72f),
+                fontSize = 13.sp
+            )
+            Button(onClick = onSupplement, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Rounded.Edit, contentDescription = null)
+                Spacer(Modifier.width(7.dp))
+                Text("补记昨晚")
+            }
+            Text("没有确认前，APP 不会自动生成任何时间。", color = Ink.copy(alpha = .55f), fontSize = 10.sp)
+        }
+    }
+}
+
+@Composable
+private fun PreviousMissingCard(onSupplement: () -> Unit) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Blush.copy(alpha = .24f)),
+        border = BorderStroke(1.dp, Blush.copy(alpha = .72f)),
+        modifier = Modifier.clickable(onClick = onSupplement)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.MenuBook, contentDescription = null, tint = Ink)
+            Spacer(Modifier.width(9.dp))
+            Column(Modifier.weight(1f)) {
+                Text("昨晚还有一页没记", color = Ink, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("不影响今晚打卡，想起来时再补", color = Ink.copy(alpha = .62f), fontSize = 11.sp)
+            }
+            Text("去补记", color = Lavender, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun DayCompleteCard(session: SleepSessionEntity?, onCorrect: () -> Unit) {
+    Card(
+        shape = cardShape,
+        colors = CardDefaults.cardColors(containerColor = Sage.copy(alpha = .18f)),
+        border = BorderStroke(1.dp, Sage.copy(alpha = .72f))
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Sage, modifier = Modifier.size(38.dp))
+            Text("昨晚已经记好了", color = Ink, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            session?.let {
+                Text(
+                    "${formatTime(it.sleepCheckInAt)} → ${it.wakeCheckInAt?.let(::formatTime) ?: "—"} · ${formatDuration(it.restWindowMinutes)}",
+                    color = Ink.copy(alpha = .72f),
+                    fontSize = 13.sp
+                )
+            }
+            OutlinedButton(
+                onClick = onCorrect,
+                enabled = session?.wakeCheckInAt != null,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("时间不对？纠正昨晚记录")
+            }
+            Text("进入今晚的睡前时段后，这里会自动恢复睡前打卡。", color = Ink.copy(alpha = .55f), fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
+private fun SessionTimeEditorDialog(
+    title: String,
+    description: String,
+    initialSleepAt: Long,
+    initialWakeAt: Long,
+    onDismiss: () -> Unit,
+    onConfirm: (Long, Long) -> Unit,
+    onRestore: (() -> Unit)? = null
+) {
+    val now = System.currentTimeMillis()
+    var sleepInput by remember(initialSleepAt) { mutableStateOf(sessionClockInput(initialSleepAt)) }
+    var wakeInput by remember(initialWakeAt) { mutableStateOf(sessionClockInput(initialWakeAt)) }
+    val sleepAt = sessionClockTimestamp(sleepInput)
+    val wakeAt = sessionClockTimestamp(wakeInput)
+    val valid = sleepAt != null && wakeAt != null &&
+        wakeAt > sleepAt && sleepAt <= now && wakeAt <= now
+    val durationMinutes = if (sleepAt != null && wakeAt != null && wakeAt > sleepAt) {
+        (wakeAt - sleepAt) / 60_000L
+    } else {
+        null
+    }
+    val unusualDuration = durationMinutes?.let { it !in 60L..(16L * 60L) } == true
+    val validationText = when {
+        sleepAt == null || wakeAt == null -> "请输入有效的 24 小时时间"
+        wakeAt <= sleepAt -> "起床时间必须晚于准备休息时间"
+        sleepAt > now || wakeAt > now -> "不能选择未来时间"
+        else -> "调整后休息时长：${formatDuration(durationMinutes)}"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, color = Ink, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(description, color = Ink.copy(alpha = .66f), fontSize = 12.sp)
+                InlineDateTimeEditor(
+                    label = "准备休息",
+                    input = sleepInput,
+                    onInputChange = { sleepInput = it }
+                )
+                InlineDateTimeEditor(
+                    label = "实际起床",
+                    input = wakeInput,
+                    onInputChange = { wakeInput = it }
+                )
+                Text(
+                    validationText,
+                    color = if (valid) Ink.copy(alpha = .72f) else Blush,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                if (valid && unusualDuration) {
+                    Text("这段时长比较少见，保存前请再确认一次。", color = Color(0xFFB77818), fontSize = 11.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = valid,
+                onClick = {
+                    if (sleepAt != null && wakeAt != null) onConfirm(sleepAt, wakeAt)
+                }
+            ) {
+                Text("确认保存")
+            }
+        },
+        dismissButton = {
+            Row {
+                onRestore?.let {
+                    TextButton(onClick = it) { Text("恢复原始时间") }
+                }
+                TextButton(onClick = onDismiss) { Text("取消") }
+            }
+        }
+    )
+}
+
+@Composable
+private fun InlineDateTimeEditor(
+    label: String,
+    input: SessionClockInput,
+    onInputChange: (SessionClockInput) -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Lavender.copy(alpha = .17f)),
+        border = BorderStroke(1.dp, Lavender.copy(alpha = .55f))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(label, color = Ink, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                IconButton(
+                    onClick = { onInputChange(input.copy(date = input.date.minusDays(1))) },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                        contentDescription = "${label}前一天",
+                        tint = Ink
+                    )
+                }
+                Text(
+                    input.date.format(DateTimeFormatter.ofPattern("M月d日")),
+                    color = Ink.copy(alpha = .72f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                IconButton(
+                    onClick = { onInputChange(input.copy(date = input.date.plusDays(1))) },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = "${label}后一天",
+                        tint = Ink
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ClockNumberField(
+                    value = input.hourText,
+                    label = "时",
+                    onValueChange = { onInputChange(input.copy(hourText = it)) }
+                )
+                Text(
+                    ":",
+                    color = Ink,
+                    fontSize = 25.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 7.dp)
+                )
+                ClockNumberField(
+                    value = input.minuteText,
+                    label = "分",
+                    onValueChange = { onInputChange(input.copy(minuteText = it)) }
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                listOf(-60L to "−1时", -10L to "−10分", 10L to "+10分", 60L to "+1时").forEach { (minutes, text) ->
+                    AssistChip(
+                        onClick = { onInputChange(adjustSessionClock(input, minutes)) },
+                        label = { Text(text, fontSize = 10.sp) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClockNumberField(
+    value: String,
+    label: String,
+    onValueChange: (String) -> Unit
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { raw ->
+            onValueChange(raw.filter { it.isDigit() }.take(2))
+        },
+        modifier = Modifier.width(76.dp),
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        textStyle = MaterialTheme.typography.headlineSmall.copy(
+            color = Ink,
+            textAlign = TextAlign.Center,
+            fontWeight = FontWeight.Bold
+        )
+    )
 }
 
 @Composable
@@ -934,6 +1554,8 @@ private fun JournalScreen(
     var showDataManagement by remember { mutableStateOf(false) }
     var showRecordDetails by remember { mutableStateOf(true) }
     var selectedSessionId by remember { mutableStateOf<Long?>(sessions.firstOrNull()?.id) }
+    var editingSessionId by remember { mutableStateOf<Long?>(null) }
+    var showCorrectionPicker by remember { mutableStateOf(false) }
     var rangePreset by remember { mutableStateOf(JournalRangePreset.RECENT_7) }
     var journalGrouping by remember { mutableStateOf(JournalGrouping.DAY) }
     var journalRange by remember { mutableStateOf(JournalDateRange.recentDays(7, "近7晚")) }
@@ -969,7 +1591,9 @@ private fun JournalScreen(
         item {
             JournalHeader(
                 dataManagementOpen = showDataManagement,
-                onDataManagement = { showDataManagement = !showDataManagement }
+                canCorrect = sessions.any { it.wakeCheckInAt != null },
+                onDataManagement = { showDataManagement = !showDataManagement },
+                onCorrectHistory = { showCorrectionPicker = true }
             )
         }
         if (showDataManagement) {
@@ -1024,7 +1648,8 @@ private fun JournalScreen(
                 expanded = showRecordDetails,
                 selectedSessionId = selectedSessionId,
                 onToggle = { showRecordDetails = !showRecordDetails },
-                onSelectSession = { selectedSessionId = it }
+                onSelectSession = { selectedSessionId = it },
+                onEditSession = { editingSessionId = it }
             )
         }
     }
@@ -1041,34 +1666,145 @@ private fun JournalScreen(
             }
         )
     }
+
+    if (showCorrectionPicker) {
+        JournalCorrectionPickerDialog(
+            sessions = sessions.filter { it.wakeCheckInAt != null },
+            onDismiss = { showCorrectionPicker = false },
+            onSelect = { sessionId ->
+                showCorrectionPicker = false
+                editingSessionId = sessionId
+            }
+        )
+    }
+
+    sessions.firstOrNull { it.id == editingSessionId }?.let { session ->
+        session.wakeCheckInAt?.let { wakeAt ->
+            SessionTimeEditorDialog(
+                title = "调整睡眠记录",
+                description = "修改后会重新计算时长和手帐趋势；首次记录时间会保留，可随时恢复。",
+                initialSleepAt = session.sleepCheckInAt,
+                initialWakeAt = wakeAt,
+                onDismiss = { editingSessionId = null },
+                onConfirm = { selectedSleepAt, selectedWakeAt ->
+                    viewModel.correctSession(session.id, selectedSleepAt, selectedWakeAt)
+                    editingSessionId = null
+                },
+                onRestore = if (session.wasCorrected) {
+                    {
+                        viewModel.restoreOriginalSession(session.id)
+                        editingSessionId = null
+                    }
+                } else {
+                    null
+                }
+            )
+        }
+    }
 }
 
 @Composable
-private fun JournalHeader(dataManagementOpen: Boolean, onDataManagement: () -> Unit) {
-    Row(
+private fun JournalHeader(
+    dataManagementOpen: Boolean,
+    canCorrect: Boolean,
+    onDataManagement: () -> Unit,
+    onCorrectHistory: () -> Unit
+) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("睡眠手帐", fontSize = 29.sp, fontWeight = FontWeight.Bold, color = Ink)
-            Text("只记录，不评判", fontSize = 14.sp, color = Ink.copy(alpha = .64f))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("睡眠手帐", fontSize = 29.sp, fontWeight = FontWeight.Bold, color = Ink)
+                Text("只记录，不评判", fontSize = 14.sp, color = Ink.copy(alpha = .64f))
+            }
+            OutlinedButton(
+                onClick = onDataManagement,
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Color(0xFFE8B766)),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = Paper.copy(alpha = .82f)),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                modifier = Modifier.height(40.dp)
+            ) {
+                Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(5.dp))
+                Text(if (dataManagementOpen) "收起" else "数据管理", fontSize = 12.sp)
+            }
         }
         OutlinedButton(
-            onClick = onDataManagement,
+            onClick = onCorrectHistory,
+            enabled = canCorrect,
+            modifier = Modifier.fillMaxWidth().height(44.dp),
             shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(1.dp, Color(0xFFE8B766)),
-            colors = ButtonDefaults.outlinedButtonColors(containerColor = Paper.copy(alpha = .82f)),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-            modifier = Modifier.height(40.dp)
+            border = BorderStroke(1.dp, Lavender.copy(alpha = .82f)),
+            colors = ButtonDefaults.outlinedButtonColors(containerColor = Lavender.copy(alpha = .14f))
         ) {
-            Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(5.dp))
-            Text(if (dataManagementOpen) "收起" else "数据管理", fontSize = 12.sp)
+            Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(7.dp))
+            Text(if (canCorrect) "纠正历史记录" else "还没有可纠正的记录", fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
     }
+}
+
+@Composable
+private fun JournalCorrectionPickerDialog(
+    sessions: List<SleepSessionEntity>,
+    onDismiss: () -> Unit,
+    onSelect: (Long) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("选择要纠正的记录", color = Ink, fontWeight = FontWeight.Bold) },
+        text = {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                items(sessions, key = { it.id }) { session ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(session.id) },
+                        shape = RoundedCornerShape(13.dp),
+                        colors = CardDefaults.cardColors(containerColor = Paper),
+                        border = BorderStroke(
+                            1.dp,
+                            if (sessionNeedsCorrectionAttention(session)) Blush else Lavender.copy(alpha = .45f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(formatJournalDate(session.sessionDate), color = Ink, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(
+                                    "${formatTime(session.sleepCheckInAt)} → ${session.wakeCheckInAt?.let(::formatTime) ?: "—"} · ${formatDuration(session.restWindowMinutes)}",
+                                    color = Ink.copy(alpha = .66f),
+                                    fontSize = 11.sp
+                                )
+                            }
+                            if (session.wasCorrected) {
+                                Text("已调整", color = Sage, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.width(7.dp))
+                            }
+                            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "纠正这晚", tint = Lavender)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
 }
 
 @Composable
@@ -1716,16 +2452,24 @@ private fun JournalDeviationPoint(modifier: Modifier = Modifier) {
     }
 }
 
+internal const val JOURNAL_HISTORY_DATE_CHIP_WIDTH_DP = 58
+internal const val JOURNAL_HISTORY_DATE_CHIP_HEIGHT_DP = 44
+internal const val JOURNAL_HISTORY_EDIT_BUTTON_HEIGHT_DP = 48
+
 @Composable
 private fun JournalRecordDetailSection(
     sessions: List<SleepSessionEntity>,
     expanded: Boolean,
     selectedSessionId: Long?,
     onToggle: () -> Unit,
-    onSelectSession: (Long) -> Unit
+    onSelectSession: (Long) -> Unit,
+    onEditSession: (Long) -> Unit
 ) {
-    val selectedIndex = sessions.indexOfFirst { it.id == selectedSessionId }.let { if (it >= 0) it else 0 }
-    val selectedSession = sessions.getOrNull(selectedIndex)
+    val selectedSession = selectedJournalSession(sessions, selectedSessionId)
+    val selectedIndex = selectedSession
+        ?.let { selected -> sessions.indexOfFirst { it.id == selected.id } }
+        ?.takeIf { it >= 0 }
+        ?: 0
 
     Column(
         modifier = Modifier
@@ -1805,7 +2549,33 @@ private fun JournalRecordDetailSection(
                                 onSelectSession = onSelectSession
                             )
                             selectedSession?.let {
-                                JournalHistoryPaper(session = it, modifier = Modifier.fillMaxWidth())
+                                OutlinedButton(
+                                    onClick = { onEditSession(it.id) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(JOURNAL_HISTORY_EDIT_BUTTON_HEIGHT_DP.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, Lavender.copy(alpha = .82f)),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Edit,
+                                        contentDescription = null,
+                                        tint = Ink,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "修改 ${formatMonthDayChip(it.sessionDate)} 这晚",
+                                        color = Ink,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                JournalHistoryPaper(
+                                    session = it,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
                         }
                     }
@@ -1838,14 +2608,16 @@ private fun JournalRecordNavigator(
                 val selected = session.id == sessions.getOrNull(selectedIndex)?.id
                 Box(
                     modifier = Modifier
+                        .width(JOURNAL_HISTORY_DATE_CHIP_WIDTH_DP.dp)
+                        .height(JOURNAL_HISTORY_DATE_CHIP_HEIGHT_DP.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(if (selected) Lavender else Paper)
                         .border(
                             BorderStroke(1.dp, if (selected) Lavender else Ink.copy(alpha = .10f)),
                             RoundedCornerShape(12.dp)
                         )
-                        .clickable { onSelectSession(session.id) }
-                        .padding(horizontal = 9.dp, vertical = 6.dp)
+                        .clickable { onSelectSession(session.id) },
+                    contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = formatMonthDayChip(session.sessionDate),
@@ -1865,6 +2637,12 @@ private fun JournalRecordNavigator(
     }
 }
 
+internal fun selectedJournalSession(
+    sessions: List<SleepSessionEntity>,
+    selectedSessionId: Long?
+): SleepSessionEntity? =
+    sessions.firstOrNull { it.id == selectedSessionId } ?: sessions.firstOrNull()
+
 private fun detailWindowSessions(
     sessions: List<SleepSessionEntity>,
     selectedIndex: Int,
@@ -1877,9 +2655,19 @@ private fun detailWindowSessions(
 }
 
 @Composable
-private fun JournalHistoryPaper(session: SleepSessionEntity, modifier: Modifier = Modifier) {
+private fun JournalHistoryPaper(
+    session: SleepSessionEntity,
+    modifier: Modifier = Modifier
+) {
     val mood = session.moodAfterWake ?: session.moodBeforeSleep
     val tag = session.tags().firstOrNull()
+    val recordMarker = when {
+        session.isSupplemented && session.wasCorrected -> "补记 · 已调整"
+        session.isSupplemented -> "补记"
+        session.wasCorrected -> "已调整"
+        else -> null
+    }
+    val footer = listOfNotNull(recordMarker, historyUsageText(session)).joinToString(" · ")
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -1897,7 +2685,13 @@ private fun JournalHistoryPaper(session: SleepSessionEntity, modifier: Modifier 
                 .padding(start = 40.dp, end = 22.dp, top = 22.dp, bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            Text(formatJournalDate(session.sessionDate), color = Ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(
+                formatJournalDate(session.sessionDate),
+                color = Ink,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.NightsStay, contentDescription = null, tint = Ink, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
@@ -1914,7 +2708,7 @@ private fun JournalHistoryPaper(session: SleepSessionEntity, modifier: Modifier 
             }
             Spacer(Modifier.weight(1f))
             HorizontalDivider(color = Color(0xFFE8D9BE))
-            Text(historyUsageText(session), color = Ink.copy(alpha = .62f), fontSize = 10.sp, maxLines = 1)
+            Text(footer, color = Ink.copy(alpha = .62f), fontSize = 10.sp, maxLines = 1)
         }
     }
 }
@@ -2111,6 +2905,40 @@ private fun formatTime(timestamp: Long): String = Instant.ofEpochMilli(timestamp
 private fun formatDateTime(timestamp: Long): String = Instant.ofEpochMilli(timestamp)
     .atZone(ZoneId.systemDefault())
     .format(DateTimeFormatter.ofPattern("M月d日 HH:mm"))
+
+private fun showDateTimePicker(
+    context: Context,
+    initialTimestamp: Long,
+    maxTimestamp: Long,
+    onSelected: (Long) -> Unit
+) {
+    val zone = ZoneId.systemDefault()
+    val initial = Instant.ofEpochMilli(initialTimestamp).atZone(zone)
+    val dialog = android.app.DatePickerDialog(
+        context,
+        { _, year, month, day ->
+            TimePickerDialog(
+                context,
+                { _, hour, minute ->
+                    val selected = LocalDate.of(year, month + 1, day)
+                        .atTime(hour, minute)
+                        .atZone(zone)
+                        .toInstant()
+                        .toEpochMilli()
+                    onSelected(selected)
+                },
+                initial.hour,
+                initial.minute,
+                true
+            ).show()
+        },
+        initial.year,
+        initial.monthValue - 1,
+        initial.dayOfMonth
+    )
+    dialog.datePicker.maxDate = maxTimestamp
+    dialog.show()
+}
 
 private fun showTimePicker(
     context: Context,
